@@ -19,5 +19,9 @@ Unlike traditional time-series database (TSDB) stacks, EzMonitor enforces state,
 
 ## 👥 Team Members & Mid-Sem Contributions
 **Team 4 (P1)**
-
+* **Utkarsh Gopal Bhartariya (2024A4PS0656H):** High-Frequency Metric Ingestion Pipeline (Go Backend)
+* **Harshavardhan Marmamula (2024A4PS0560H):** Data Infrastructure and Schema Initialisation
+* **Sanjay Varghese Sunil (2024A4PS0623H):** Frontend Visualization & Dashboard Interface (React)
+* **Diveshraju M (2024A4PS0727H):** Data aggregation and query optimization
+* **Asnani Aayush Pratap (2024A4PS0757H):** Alerting Engine & Webhook Dispatch (Database Triggers & Go Worker)
 
