@@ -1,9 +1,3 @@
-# EzMonitor stack.
-#   First time:   cp .env.example .env   (then set passwords)
-#   DB only:      docker compose up -d                 -> db + migrate + db-maint
-#   Dev data:     docker compose --profile seed run --rm seed
-#   Full stack:   docker compose --profile app up -d   (once backend/frontend have Dockerfiles)
-#   Reset DB:     docker compose down -v               (deletes the pgdata volume)
 name: ezmonitor
 
 x-db-env: &db-env
