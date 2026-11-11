@@ -63,6 +63,10 @@ CREATE TABLE instances (
     -- 16-hex hardware fingerprint produced by the agent (collector/fingerprint.go)
     fingerprint  VARCHAR(16)     NOT NULL UNIQUE CHECK (fingerprint ~ '^[0-9a-f]{16}$'),
     -- hex SHA-256 of the agent's secret token; the plaintext token is never stored
+        -- hardware metadata, sent by the agent in the pairing payload (nullable: may be unknown)
+    cpu_model    VARCHAR(150),
+    ram_config   VARCHAR(50),
+    gpu_model    VARCHAR(150),
     token_hash   VARCHAR(64)     NOT NULL UNIQUE CHECK (token_hash ~ '^[0-9a-f]{64}$'),
     enabled      BOOLEAN         NOT NULL DEFAULT true,     -- admin switch (BR5 / T1)
     status       instance_status NOT NULL DEFAULT 'unknown',-- health, set by backend
