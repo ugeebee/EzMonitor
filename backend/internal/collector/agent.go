@@ -59,13 +59,13 @@ func (a *Agent) Start(ctx context.Context) error {
 			downSpeed, upSpeed := CalculateNetworkSpeeds(prevNet, currNet)
 
 			sample := models.MetricSample{
-				RecordedAt: time.Now().UTC().Truncate(time.Second),
-				CPUUtil:    CalculateCPUUtil(prevCPU, currCPU),
-				GPUUtil:    GetGPUUtil(),
-				RAMUtil:    GetRAMUtil(),
-				Uptime:     GetUptime(),
-				UpSpeed:    upSpeed,
-				DownSpeed:  downSpeed,
+				RecordedAt:  time.Now().UTC().Truncate(time.Second),
+				CPUUtil:     CalculateCPUUtil(prevCPU, currCPU),
+				GPUUtil:     GetGPUUtil(),
+				RAMUtil:     GetRAMUtil(),
+				Uptime:      GetUptime(),
+				NetUpKBPS:   upSpeed,
+				NetDownKBPS: downSpeed,
 			}
 			prevCPU = currCPU
 			prevNet = currNet
