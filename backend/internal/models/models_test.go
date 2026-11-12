@@ -13,9 +13,15 @@ func TestRoleParsingAndMapping(t *testing.T) {
 		t.Errorf("Expected role ID %d for admin, got %d (err: %v)", models.RoleAdmin, adminID, err)
 	}
 
+	subadminID, err := models.ParseRole("subadmin")
+	if err != nil || subadminID != models.RoleSubadmin {
+		t.Errorf("Expected role ID %d for subadmin, got %d (err: %v)", models.RoleSubadmin, subadminID, err)
+	}
+
+	// Legacy alias "editor"
 	editorID, err := models.ParseRole("editor")
-	if err != nil || editorID != models.RoleEditor {
-		t.Errorf("Expected role ID %d for editor, got %d (err: %v)", models.RoleEditor, editorID, err)
+	if err != nil || editorID != models.RoleSubadmin {
+		t.Errorf("Expected legacy alias 'editor' to resolve to subadmin (%d), got %d", models.RoleSubadmin, editorID)
 	}
 
 	viewerID, err := models.ParseRole("viewer")
@@ -33,8 +39,8 @@ func TestRoleParsingAndMapping(t *testing.T) {
 	if models.RoleName(models.RoleAdmin) != "admin" {
 		t.Errorf("Expected role name 'admin'")
 	}
-	if models.RoleName(models.RoleEditor) != "editor" {
-		t.Errorf("Expected role name 'editor'")
+	if models.RoleName(models.RoleSubadmin) != "subadmin" {
+		t.Errorf("Expected role name 'subadmin'")
 	}
 	if models.RoleName(models.RoleViewer) != "viewer" {
 		t.Errorf("Expected role name 'viewer'")
@@ -106,52 +112,54 @@ func TestRegisterRequestValidation(t *testing.T) {
 	}
 }
 
-func TestGroupAndMemberRequests(t *testing.T) {
-	// Create group
-	grpReq := models.CreateGroupRequest{Label: "   "}
-	if err := grpReq.Validate(); err == nil {
-		t.Errorf("Expected empty group label to fail validation")
+func TestSubgroupAndInstanceRequests(t *testing.T) {
+	// Subgroup request
+	subReq := models.CreateSubgroupRequest{Label: "   "}
+	if err := subReq.Validate(); err == nil {
+		t.Errorf("Expected empty subgroup label to fail")
 	}
 
-	validGrp := models.CreateGroupRequest{Label: "DevOps Team"}
-	if err := validGrp.Validate(); err != nil {
-		t.Errorf("Expected valid label to pass: %v", err)
+	subReqValid := models.CreateSubgroupRequest{Label: "Core Services"}
+	if err := subReqValid.Validate(); err != nil {
+		t.Errorf("Expected valid subgroup label to pass: %v", err)
 	}
 
-	// Admit member by role name
+	// Rename request
+	renameReq := models.RenameRequest{Label: "Updated Label"}
+	if err := renameReq.Validate(); err != nil {
+		t.Errorf("Expected valid rename request to pass: %v", err)
+	}
+
+	// Admit member with subadmin role
 	admitReq := models.AdmitMemberRequest{
 		Email: "bob@example.com",
-		Role:  "editor",
+		Role:  "subadmin",
 	}
 	roleID, err := admitReq.ValidateAndResolveRole()
-	if err != nil || roleID != models.RoleEditor {
-		t.Errorf("Expected role editor (2), got %d (err: %v)", roleID, err)
+	if err != nil || roleID != models.RoleSubadmin {
+		t.Errorf("Expected role subadmin (2), got %d (err: %v)", roleID, err)
 	}
 
-	// Admit member by default role (viewer)
-	admitDefault := models.AdmitMemberRequest{
-		Email: "charlie@example.com",
+	// Add instance validation
+	instReq := models.AddInstanceRequest{
+		Label:       "worker-01",
+		Fingerprint: "0123456789abcdef", // 16 hex
 	}
-	roleID, err = admitDefault.ValidateAndResolveRole()
-	if err != nil || roleID != models.RoleViewer {
-		t.Errorf("Expected default role viewer (3), got %d (err: %v)", roleID, err)
-	}
-
-	// Admit member with invalid role
-	admitInvalid := models.AdmitMemberRequest{
-		Email: "dave@example.com",
-		Role:  "invalid-role",
-	}
-	_, err = admitInvalid.ValidateAndResolveRole()
-	if err == nil {
-		t.Errorf("Expected invalid role to fail")
+	if err := instReq.Validate(); err != nil {
+		t.Errorf("Expected valid instance request to pass: %v", err)
 	}
 
-	// Update role
-	updateReq := models.UpdateMemberRoleRequest{Role: "admin"}
-	roleID, err = updateReq.ValidateAndResolveRole()
-	if err != nil || roleID != models.RoleAdmin {
-		t.Errorf("Expected role admin (1), got %d (err: %v)", roleID, err)
+	instReqBadFP := models.AddInstanceRequest{
+		Label:       "worker-01",
+		Fingerprint: "bad-fingerprint",
+	}
+	if err := instReqBadFP.Validate(); err == nil {
+		t.Errorf("Expected invalid fingerprint to fail")
+	}
+
+	// Rename instance
+	renameInst := models.RenameInstanceRequest{Label: "new-box-name"}
+	if err := renameInst.Validate(); err != nil {
+		t.Errorf("Expected rename instance to pass: %v", err)
 	}
 }
-

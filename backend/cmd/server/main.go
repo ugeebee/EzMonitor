@@ -41,7 +41,9 @@ func main() {
 	// Handlers
 	authHandler := handlers.NewAuthHandler(db.API, cfg.JWTSecret)
 	groupHandler := handlers.NewGroupHandler(db.API)
+	subgroupHandler := handlers.NewSubgroupHandler(db.API)
 	memberHandler := handlers.NewMemberHandler(db.API)
+	instanceHandler := handlers.NewInstanceHandler(db.API)
 	ingestHandler := handlers.NewIngestHandler(db.Ingest)
 
 	// Router setup
@@ -72,7 +74,6 @@ func main() {
 
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
-		// Health check
 		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"status":"ok","service":"ezmonitor-backend","time":"%s"}`, time.Now().UTC().Format(time.RFC3339))
@@ -93,39 +94,76 @@ func main() {
 		// Agent metrics ingestion endpoint
 		r.Post("/ingest", ingestHandler.IngestBatch)
 
-		// Protected group & membership routes
+		// Protected application routes
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.AuthRequired(cfg.JWTSecret))
 
-			// Group CRUD & Listing
+			// ==========================================
+			// 1. Root Group Management
+			// ==========================================
 			r.Post("/groups", groupHandler.CreateGroup)
 			r.Get("/groups", groupHandler.ListGroups)
 
-			// Group-specific operations
 			r.Route("/groups/{groupId}", func(r chi.Router) {
-				// Operations requiring at least group membership
+				// Accessible to group members
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireGroupMember(db.API))
 					r.Get("/", groupHandler.GetGroup)
+					r.Get("/subgroups", subgroupHandler.ListSubgroups)
 					r.Get("/members", memberHandler.ListMembers)
 				})
 
-				// Request to join (for users not yet in group)
-				r.Post("/join", memberHandler.RequestToJoin)
-
-				// Operations requiring Group Owner/Admin (Admitting users, managing roles)
+				// Admin-only group operations
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireGroupAdmin(db.API))
-
-					// Admit a user to the group and assign role
+					r.Put("/", groupHandler.RenameGroup)
+					r.Post("/subgroups", subgroupHandler.CreateSubgroup)
 					r.Post("/members", memberHandler.AdmitMember)
-					r.Post("/admit", memberHandler.AdmitMember) // Friendly alias
+					r.Post("/admit", memberHandler.AdmitMember)
+				})
+			})
 
-					// Update a member's role (admin, editor, viewer)
+			// ==========================================
+			// 2. Subgroup Management (RBAC: Admin, Subadmin, Viewer)
+			// ==========================================
+			r.Route("/subgroups/{subgroupId}", func(r chi.Router) {
+				// Read operations (Viewer, Subadmin, Admin)
+				// "viewers can only see the metrics"
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireSubgroupAccess(db.API))
+
+					r.Get("/", subgroupHandler.GetSubgroup)
+					r.Get("/members", memberHandler.ListMembers)
+					r.Get("/instances", instanceHandler.ListInstances)
+
+					// Viewers inspect time-series metrics
+					r.Get("/instances/{instanceId}/metrics", instanceHandler.GetInstanceMetrics)
+				})
+
+				// Write / Management operations (Admin and Subadmin ONLY)
+				// "admin and subadmin can add instacnes to the specific subgroips viewers can only see the metrics and admin subadmin can rename and add instacne and members"
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireSubgroupAdminOrSubadmin(db.API))
+
+					// Rename subgroup
+					r.Put("/", subgroupHandler.RenameSubgroup)
+
+					// Manage instances
+					r.Post("/instances", instanceHandler.AddInstance)
+					r.Put("/instances/{instanceId}", instanceHandler.RenameInstance)
+					r.Delete("/instances/{instanceId}", instanceHandler.DeleteInstance)
+
+					// Manage members
+					r.Post("/members", memberHandler.AdmitMember)
+					r.Post("/admit", memberHandler.AdmitMember)
 					r.Put("/members/{userId}", memberHandler.UpdateMemberRole)
-
-					// Remove a member from the group
 					r.Delete("/members/{userId}", memberHandler.RemoveMember)
+				})
+
+				// Delete subgroup (Admin only)
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireGroupAdmin(db.API))
+					r.Delete("/", subgroupHandler.DeleteSubgroup)
 				})
 			})
 		})
@@ -162,4 +200,3 @@ func main() {
 		log.Println("HTTP server stopped successfully.")
 	}
 }
-

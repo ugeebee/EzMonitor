@@ -1,15 +1,18 @@
 package models
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
-	RoleAdmin  int16 = 1
-	RoleEditor int16 = 2
-	RoleViewer int16 = 3
+	RoleAdmin    int16 = 1
+	RoleSubadmin int16 = 2
+	RoleViewer   int16 = 3
 
-	RoleNameAdmin  = "admin"
-	RoleNameEditor = "editor"
-	RoleNameViewer = "viewer"
+	RoleNameAdmin    = "admin"
+	RoleNameSubadmin = "subadmin"
+	RoleNameViewer   = "viewer"
 )
 
 type Role struct {
@@ -18,16 +21,17 @@ type Role struct {
 }
 
 // ParseRole parses a role name or returns an error if invalid.
+// Accepts 'admin', 'subadmin', and 'viewer' (also accepts 'editor' as legacy alias for subadmin).
 func ParseRole(name string) (int16, error) {
-	switch name {
+	switch strings.ToLower(strings.TrimSpace(name)) {
 	case RoleNameAdmin:
 		return RoleAdmin, nil
-	case RoleNameEditor:
-		return RoleEditor, nil
+	case RoleNameSubadmin, "editor":
+		return RoleSubadmin, nil
 	case RoleNameViewer:
 		return RoleViewer, nil
 	default:
-		return 0, fmt.Errorf("invalid role name: '%s', expected 'admin', 'editor', or 'viewer'", name)
+		return 0, fmt.Errorf("invalid role name: '%s', expected 'admin', 'subadmin', or 'viewer'", name)
 	}
 }
 
@@ -36,8 +40,8 @@ func RoleName(roleID int16) string {
 	switch roleID {
 	case RoleAdmin:
 		return RoleNameAdmin
-	case RoleEditor:
-		return RoleNameEditor
+	case RoleSubadmin:
+		return RoleNameSubadmin
 	case RoleViewer:
 		return RoleNameViewer
 	default:
@@ -49,4 +53,3 @@ func RoleName(roleID int16) string {
 func IsValidRoleID(roleID int16) bool {
 	return roleID >= RoleAdmin && roleID <= RoleViewer
 }
-

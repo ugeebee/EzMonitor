@@ -22,12 +22,23 @@ func NewMemberHandler(db *pgxpool.Pool) *MemberHandler {
 	return &MemberHandler{db: db}
 }
 
-// ListMembers returns all users belonging to a group along with their roles.
+func getTargetGroupID(r *http.Request) (int64, error) {
+	idStr := chi.URLParam(r, "subgroupId")
+	if idStr == "" {
+		idStr = chi.URLParam(r, "groupId")
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, errors.New("invalid group or subgroup ID")
+	}
+	return id, nil
+}
+
+// ListMembers returns all users belonging to a group/subgroup along with their roles.
 func (h *MemberHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
-	groupIDStr := chi.URLParam(r, "groupId")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil || groupID <= 0 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid group ID"})
+	groupID, err := getTargetGroupID(r)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -59,12 +70,11 @@ func (h *MemberHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, members)
 }
 
-// AdmitMember allows a group Owner (Admin) to admit a user to the group and assign them a role.
+// AdmitMember allows a group Owner (Admin) or Subadmin to admit a user to the group/subgroup and assign them a role.
 func (h *MemberHandler) AdmitMember(w http.ResponseWriter, r *http.Request) {
-	groupIDStr := chi.URLParam(r, "groupId")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil || groupID <= 0 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid group ID"})
+	groupID, err := getTargetGroupID(r)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -128,12 +138,11 @@ func (h *MemberHandler) AdmitMember(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateMemberRole allows a group Owner (Admin) to change a member's role (admin, editor, viewer).
+// UpdateMemberRole allows a group Owner (Admin) or Subadmin to change a member's role (admin, subadmin, viewer).
 func (h *MemberHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
-	groupIDStr := chi.URLParam(r, "groupId")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil || groupID <= 0 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid group ID"})
+	groupID, err := getTargetGroupID(r)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -215,12 +224,11 @@ func (h *MemberHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, member)
 }
 
-// RemoveMember removes a user from a group.
+// RemoveMember removes a user from a group/subgroup.
 func (h *MemberHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
-	groupIDStr := chi.URLParam(r, "groupId")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil || groupID <= 0 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid group ID"})
+	groupID, err := getTargetGroupID(r)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -300,12 +308,11 @@ func (h *MemberHandler) RequestToJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"message":  "Join request noted. Please ask the group owner/admin to admit your account.",
-		"g_id":     groupID,
-		"group":    groupLabel,
-		"u_id":     claims.UID,
-		"email":    claims.Email,
-		"status":   "pending_admittance",
+		"message": "Join request noted. Please ask the group owner/admin to admit your account.",
+		"g_id":    groupID,
+		"group":   groupLabel,
+		"u_id":    claims.UID,
+		"email":   claims.Email,
+		"status":  "pending_admittance",
 	})
 }
-

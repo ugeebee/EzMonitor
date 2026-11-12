@@ -182,3 +182,39 @@ func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, detail)
 }
+
+// RenameGroup allows Admin to rename a top-level group.
+func (h *GroupHandler) RenameGroup(w http.ResponseWriter, r *http.Request) {
+	groupIDStr := chi.URLParam(r, "groupId")
+	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
+	if err != nil || groupID <= 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid group ID"})
+		return
+	}
+
+	var req models.RenameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	ctx := r.Context()
+	query := `UPDATE groups SET label = $1 WHERE g_id = $2 RETURNING g_id, label, date_created`
+	var group models.Group
+	err = h.db.QueryRow(ctx, query, req.Label, groupID).Scan(&group.GID, &group.Label, &group.DateCreated)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			respondJSON(w, http.StatusNotFound, map[string]string{"error": "Group not found"})
+			return
+		}
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to rename group: " + err.Error()})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, group)
+}
