@@ -1,1 +1,3 @@
 backend/agent_config.json
+.env
+backups/

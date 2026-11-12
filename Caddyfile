@@ -1,0 +1,13 @@
+# Reverse proxy. Set EZM_DOMAIN in .env to a real domain for automatic HTTPS.
+{$EZM_DOMAIN:localhost} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy backend:8080
+	}
+
+	# Frontend container is not defined yet; this returns 502 until it is.
+	handle {
+		reverse_proxy frontend:5173
+	}
+}
