@@ -308,11 +308,12 @@ func (h *MemberHandler) RequestToJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"message": "Join request noted. Please ask the group owner/admin to admit your account.",
-		"g_id":    groupID,
-		"group":   groupLabel,
-		"u_id":    claims.UID,
-		"email":   claims.Email,
-		"status":  "pending_admittance",
+		"message":  "Join request noted. Please ask the group owner/admin to admit your account.",
+		"g_id":     groupID,
+		"group":    groupLabel,
+		"u_id":     claims.UID,
+		"email":    claims.Email,
+		"status":   "pending_admittance",
 	})
 }
+
