@@ -6,6 +6,7 @@ type MetricSample struct {
 	RecordedAt  time.Time `json:"recorded_at"`
 	CPUUtil     float64   `json:"cpu_util"`
 	GPUUtil     *float64  `json:"gpu_util"`
+	RAMUtil     float64   `json:"ram_util"`
 	Uptime      int64     `json:"uptime"`
 	NetUpKBPS   float64   `json:"net_up_kbps"`
 	NetDownKBPS float64   `json:"net_down_kbps"`
