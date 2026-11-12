@@ -17,6 +17,7 @@ import (
 	"github.com/ugeebee/EzMonitor/backend/internal/database"
 	"github.com/ugeebee/EzMonitor/backend/internal/handlers"
 	"github.com/ugeebee/EzMonitor/backend/internal/middleware"
+	"github.com/ugeebee/EzMonitor/backend/internal/pairing"
 )
 
 func main() {
@@ -38,6 +39,9 @@ func main() {
 	}
 	defer db.Close()
 
+	// Pairing hub for WebSocket OTP handshakes
+	pairingHub := pairing.NewHub()
+
 	// Handlers
 	authHandler := handlers.NewAuthHandler(db.API, cfg.JWTSecret)
 	groupHandler := handlers.NewGroupHandler(db.API)
@@ -45,6 +49,7 @@ func main() {
 	memberHandler := handlers.NewMemberHandler(db.API)
 	instanceHandler := handlers.NewInstanceHandler(db.API)
 	ingestHandler := handlers.NewIngestHandler(db.Ingest)
+	pairingHandler := handlers.NewPairingHandler(db.API, pairingHub)
 
 	// Router setup
 	r := chi.NewRouter()
@@ -91,8 +96,9 @@ func main() {
 			})
 		})
 
-		// Agent metrics ingestion endpoint
+		// Agent metrics ingestion & WebSocket pairing endpoints
 		r.Post("/ingest", ingestHandler.IngestBatch)
+		r.Get("/agent/pair/ws", pairingHandler.AgentWebSocket)
 
 		// Protected application routes
 		r.Group(func(r chi.Router) {
@@ -150,6 +156,7 @@ func main() {
 
 					// Manage instances
 					r.Post("/instances", instanceHandler.AddInstance)
+					r.Post("/instances/pair", pairingHandler.AdminPairInstance)
 					r.Put("/instances/{instanceId}", instanceHandler.RenameInstance)
 					r.Delete("/instances/{instanceId}", instanceHandler.DeleteInstance)
 
