@@ -81,3 +81,23 @@ export interface MetricsResponse {
   count: number
   samples: MetricSample[]
 }
+
+// Returned by GET /groups/{id}/subgroups (verify once a group has real subgroups)
+export interface Subgroup {
+  g_id: number
+  parent_id?: number
+  label: string
+  date_created: string
+  instances_count?: number
+  members_count?: number
+}
+
+export interface Member {
+  u_id: number
+  name: string
+  email: string
+  role_id: number
+  role_name: RoleName
+  // The backend currently returns a zero date here, so don't display it.
+  date_joined?: string
+}

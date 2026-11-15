@@ -5,7 +5,9 @@ import type {
   Instance,
   InstanceCreated,
   MeResponse,
+  Member,
   MetricsResponse,
+  Subgroup,
 } from '../types'
 
 // ---- Auth ----
@@ -44,3 +46,8 @@ export const getInstanceMetrics = (subgroupId: number, instanceId: number, limit
   request<MetricsResponse>(`/subgroups/${subgroupId}/instances/${instanceId}/metrics`, {
     query: { limit },
   })
+
+// ---- Groups ----
+export const listSubgroups = (groupId: number) => request<Subgroup[]>(`/groups/${groupId}/subgroups`)
+
+export const listMembers = (groupId: number) => request<Member[]>(`/groups/${groupId}/members`)
