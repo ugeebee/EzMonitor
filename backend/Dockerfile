@@ -1,20 +1,31 @@
-# ── Build stage ──────────────────────────────────────────────────────
-FROM golang:1.25 AS builder
-WORKDIR /src
+# Multi-stage build for EzMonitor backend
+FROM golang:1.26-alpine AS builder
 
+WORKDIR /app
+
+# Install git and build essentials
+RUN apk add --no-cache git ca-certificates
+
+# Cache dependencies
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy source code
 COPY . .
-RUN CGO_ENABLED=0 go build -o /bin/agent       ./cmd/agent
-RUN CGO_ENABLED=0 go build -o /bin/alertworker  ./cmd/alertworker
 
-# ── Runtime stage ────────────────────────────────────────────────────
-FROM gcr.io/distroless/static-debian12
+# Build the server binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/server ./cmd/server
 
-COPY --from=builder /bin/agent       /bin/agent
-COPY --from=builder /bin/alertworker /bin/alertworker
+# Final runtime image
+FROM alpine:3.20
 
-# Default entrypoint is the ingest/API agent.
-# The alert-worker service overrides this with ["/bin/alertworker"].
-ENTRYPOINT ["/bin/agent"]
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=builder /app/server /app/server
+
+EXPOSE 8080
+
+ENTRYPOINT ["/app/server"]
+
