@@ -13,8 +13,9 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the server binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/server ./cmd/server
+# Build the server and alertworker binaries
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/alertworker ./cmd/alertworker
 
 # Final runtime image
 FROM alpine:3.20
@@ -24,6 +25,8 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 
 COPY --from=builder /app/server /app/server
+COPY --from=builder /app/server /bin/server
+COPY --from=builder /app/alertworker /bin/alertworker
 
 EXPOSE 8080
 
