@@ -13,11 +13,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/ugeebee/EzMonitor/backend/internal/config"
 	"github.com/ugeebee/EzMonitor/backend/internal/database"
 	"github.com/ugeebee/EzMonitor/backend/internal/handlers"
 	"github.com/ugeebee/EzMonitor/backend/internal/middleware"
 	"github.com/ugeebee/EzMonitor/backend/internal/pairing"
+	"github.com/ugeebee/EzMonitor/backend/internal/query"
 )
 
 func main() {
@@ -50,6 +52,27 @@ func main() {
 	instanceHandler := handlers.NewInstanceHandler(db.API)
 	ingestHandler := handlers.NewIngestHandler(db.Ingest)
 	pairingHandler := handlers.NewPairingHandler(db.API, pairingHub)
+
+	// Read API for dashboards (internal/query). It is written against
+	// database/sql, so it shares the API pgx pool through pgx's stdlib
+	// adapter: one driver and one pool at runtime. It does its own RBAC
+	// (404 for groups/instances the caller cannot see), using the JWT
+	// claims that AuthRequired puts in the request context.
+	readDB := stdlib.OpenDBFromPool(db.API)
+	defer readDB.Close()
+	queryHandler := &query.Handler{
+		Store: query.NewStore(readDB),
+		User: func(r *http.Request) (int64, bool) {
+			claims, ok := middleware.GetAuthUser(r.Context())
+			if !ok {
+				return 0, false
+			}
+			return claims.UID, true
+		},
+	}
+	queryMux := http.NewServeMux()
+	queryHandler.Register(queryMux) // patterns are full paths: "GET /api/v1/fleet", ...
+	readAPI := queryMux.ServeHTTP
 
 	// Router setup
 	r := chi.NewRouter()
@@ -110,7 +133,19 @@ func main() {
 			r.Post("/groups", groupHandler.CreateGroup)
 			r.Get("/groups", groupHandler.ListGroups)
 
+			// Read API (dashboards): instance-scoped and fleet routes
+			r.Get("/fleet", readAPI)
+			r.Get("/instances/{id}/series", readAPI)
+			r.Get("/instances/{id}/events", readAPI)
+
 			r.Route("/groups/{groupId}", func(r chi.Router) {
+				// Read API (dashboards): group-scoped routes. No RBAC middleware
+				// here; the query package checks membership itself.
+				r.Get("/series", readAPI)
+				r.Get("/hotspots", readAPI)
+				r.Get("/alerts/summary", readAPI)
+				r.Get("/alerts", readAPI)
+
 				// Accessible to group members
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireGroupMember(db.API))

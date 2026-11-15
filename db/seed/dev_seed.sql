@@ -4,7 +4,7 @@
 --
 -- Logins (password = the part before @ + "123"):
 --   admin@ezmonitor.dev  / admin123   -> admin of "Team 4 Lab", viewer of "Other Tenant"
---   editor@ezmonitor.dev / editor123  -> editor of "Team 4 Lab"
+--   editor@ezmonitor.dev / editor123  -> subadmin (role 2) of "Team 4 Lab"
 --   viewer@ezmonitor.dev / viewer123  -> viewer of "Team 4 Lab"
 --   outsider@ezmonitor.dev / outsider123 -> admin of "Other Tenant" only (tenant-isolation tests)
 --
@@ -42,12 +42,15 @@ JOIN users  u ON u.email = m.email
 JOIN groups g ON g.label = m.grp;
 
 -- 10 instances in Team 4 Lab + 1 in Other Tenant; inserted in order so i_id = n on a fresh DB.
-INSERT INTO instances (g_id, label, fingerprint, token_hash, enabled)
+INSERT INTO instances (g_id, label, fingerprint, token_hash, enabled, cpu_model, ram_config, gpu_model)
 SELECT g.g_id,
        format('dev-box-%s', lpad(n::text, 2, '0')),
        lpad(to_hex(n), 16, '0'),
        encode(sha256(convert_to(format('dev-token-%s', lpad(n::text, 4, '0')), 'UTF8')), 'hex'),
-       n <> 10
+       n <> 10,
+       CASE WHEN n % 3 = 0 THEN 'AMD Ryzen 7 5800X' ELSE 'Intel Core i7-12700' END,
+       CASE WHEN n % 2 = 0 THEN '32 GB' ELSE '16 GB' END,
+       CASE WHEN n % 2 = 0 THEN 'NVIDIA GeForce RTX 3060' END      -- odd i_id: no GPU (matches backfill)
 FROM generate_series(1, 11) AS n
 JOIN groups g ON g.label = CASE WHEN n = 11 THEN 'Other Tenant' ELSE 'Team 4 Lab' END
 ORDER BY n;

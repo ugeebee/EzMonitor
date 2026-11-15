@@ -1,7 +1,7 @@
 # EzMonitor read path: aggregation queries and optimisation
 
 Owner: Diveshraju (data aggregation and query optimisation).
-Code: `db/migrations/000004_query_indexes.*`, `backend/internal/query/` (SQL in `sql/`),
+Code: `db/migrations/000005_query_indexes.*`, `backend/internal/query/` (SQL in `sql/`),
 benchmark: `db/bench/run.sh`. API reference for the frontend: `backend/internal/query/README.md`.
 
 ## 1. Queries
@@ -146,5 +146,5 @@ an InitPlan value. Partitions below the rollup split are therefore skipped at ru
 - A refresh blocks new ingest statements for its duration (shared vs exclusive advisory lock):
   ~10 ms hourly, 1–2 s only for a rebuild after a large backfill.
 - The ingest transaction must run in READ COMMITTED (the default).
-- `000004` redefines `run_maintenance()` (same signature). A later migration that redefines it
+- `000005` redefines `run_maintenance()` (same signature). A later migration that redefines it
   again must keep the `refresh_metrics_rollup()` / `prune_metrics_rollup()` calls.

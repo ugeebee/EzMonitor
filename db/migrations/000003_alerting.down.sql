@@ -3,9 +3,8 @@
 -- =====================================================================
 BEGIN;
 
--- Revoke the explicit grants first
-REVOKE EXECUTE ON FUNCTION IF EXISTS notify_alert_fired()   FROM ezm_ingest;
-REVOKE EXECUTE ON FUNCTION IF EXISTS evaluate_alert_rules() FROM ezm_ingest;
+-- (No REVOKE needed: DROP FUNCTION removes its grants. The previous
+-- "REVOKE ... ON FUNCTION IF EXISTS" was not valid PostgreSQL syntax.)
 
 -- Drop triggers (must be dropped before the functions they reference)
 DROP TRIGGER IF EXISTS t3_notify_alert_fired         ON alert_logs;

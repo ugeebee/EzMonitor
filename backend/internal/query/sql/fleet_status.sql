@@ -2,7 +2,7 @@
 -- One row per visible instance: latest sample, labels, open alerts, caller's role.
 --
 --   $1 u_id      bigint
---   $2 g_id      bigint|NULL   restrict to one group
+--   $2 g_id      bigint|NULL   restrict to one group and its subgroups
 --   $3 lookback  interval      how far back to look for the latest sample
 --
 -- The LATERAL subquery is a top-1 per instance: a backward scan of the
@@ -14,7 +14,7 @@ SELECT i.i_id, i.g_id, g.label AS group_label, i.label, ugr.role_id,
        last.recorded_at, last.cpu_util, last.gpu_util, last.ram_util,
        last.uptime, last.net_up_kbps, last.net_down_kbps,
        act.active_alerts
-FROM user_group_roles ugr
+FROM effective_group_roles ugr
 JOIN groups    g ON g.g_id = ugr.g_id
 JOIN instances i ON i.g_id = ugr.g_id
 LEFT JOIN LATERAL (
@@ -38,5 +38,5 @@ LEFT JOIN LATERAL (
     WHERE a.i_id = i.i_id AND a.status = 'active'        -- index-only scan on alert_logs_one_active
 ) act ON true
 WHERE ugr.u_id = $1
-  AND ($2::bigint IS NULL OR ugr.g_id = $2)
+  AND ($2::bigint IS NULL OR ugr.g_id = $2 OR g.parent_id = $2)
 ORDER BY g.label, i.label;

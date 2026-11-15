@@ -131,7 +131,7 @@ export default function GroupPage() {
                   return (
                     <tr key={r.i_id}>
                       <td>
-                        <Link to={`/subgroups/${id}/instances/${r.i_id}`}>{r.label}</Link>
+                        <Link to={`/subgroups/${r.g_id}/instances/${r.i_id}`}>{r.label}</Link>
                       </td>
                       <td>
                         <span className={`badge badge-${state}`}>{STATE_LABEL[state]}</span>

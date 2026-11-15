@@ -43,7 +43,7 @@ func (h *MemberHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := `
-		SELECT u.u_id, u.name, u.email, ugr.role_id, r.role_name
+		SELECT u.u_id, u.name, u.email, ugr.role_id, r.role_name, ugr.date_joined
 		FROM user_group_roles ugr
 		JOIN users u ON ugr.u_id = u.u_id
 		JOIN roles r ON ugr.role_id = r.role_id
@@ -60,7 +60,7 @@ func (h *MemberHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	members := make([]models.GroupMember, 0)
 	for rows.Next() {
 		var m models.GroupMember
-		if err := rows.Scan(&m.UID, &m.Name, &m.Email, &m.RoleID, &m.RoleName); err != nil {
+		if err := rows.Scan(&m.UID, &m.Name, &m.Email, &m.RoleID, &m.RoleName, &m.DateJoined); err != nil {
 			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to parse member data"})
 			return
 		}
@@ -204,12 +204,12 @@ func (h *MemberHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request)
 	// Fetch updated user info
 	var member models.GroupMember
 	err = h.db.QueryRow(ctx, `
-		SELECT u.u_id, u.name, u.email, ugr.role_id, r.role_name
+		SELECT u.u_id, u.name, u.email, ugr.role_id, r.role_name, ugr.date_joined
 		FROM user_group_roles ugr
 		JOIN users u ON ugr.u_id = u.u_id
 		JOIN roles r ON ugr.role_id = r.role_id
 		WHERE ugr.u_id = $1 AND ugr.g_id = $2
-	`, targetUID, groupID).Scan(&member.UID, &member.Name, &member.Email, &member.RoleID, &member.RoleName)
+	`, targetUID, groupID).Scan(&member.UID, &member.Name, &member.Email, &member.RoleID, &member.RoleName, &member.DateJoined)
 
 	if err != nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{

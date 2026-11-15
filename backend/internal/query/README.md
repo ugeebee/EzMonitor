@@ -13,7 +13,7 @@ Times are RFC 3339 UTC. Time range parameters, shared by every route that takes 
 
 | route | params | notes |
 |---|---|---|
-| `/api/v1/fleet` | `group`, `lookback=5m` (≤ 24h) | one row per visible instance with its latest sample (`latest: null` if silent for `lookback`), labels, open alerts, your `role_id` (1 admin, 2 editor, 3 viewer) |
+| `/api/v1/fleet` | `group`, `lookback=5m` (≤ 24h) | one row per visible instance with its latest sample (`latest: null` if silent for `lookback`), labels, open alerts, your `role_id` (1 admin, 2 subadmin, 3 viewer) |
 | `/api/v1/instances/{id}/series` | range, `step` | chart data for one instance |
 | `/api/v1/groups/{id}/series` | range, `step`, `label=key:value` (repeatable, all must match) | one series per instance in the group |
 | `/api/v1/groups/{id}/hotspots` | range (≤ 24h), `metric=cpu_util`, `limit=10` | instances ranked by p95 of `metric` |

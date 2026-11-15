@@ -1,7 +1,7 @@
 // Package query is the read path behind the dashboards: time-bucketed
 // series, fleet status, hotspots, data gaps/reboots and alert reporting.
 //
-// Every query is tenant-scoped through user_group_roles; the caller's user
+// Every query is tenant-scoped through effective_group_roles (000006); the caller's user
 // ID comes from the session, never from the request. The SQL lives in
 // sql/*.sql (embedded) so it can be read, EXPLAINed and graded on its own.
 //
@@ -65,7 +65,7 @@ func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 // tenants cannot be probed).
 func (s *Store) GroupRole(ctx context.Context, userID, groupID int64) (role int16, ok bool, err error) {
 	err = s.db.QueryRowContext(ctx,
-		`SELECT role_id FROM user_group_roles WHERE u_id = $1 AND g_id = $2`,
+		`SELECT role_id FROM effective_group_roles WHERE u_id = $1 AND g_id = $2`,
 		userID, groupID).Scan(&role)
 	if err == sql.ErrNoRows {
 		return 0, false, nil
@@ -78,7 +78,7 @@ func (s *Store) InstanceRole(ctx context.Context, userID, instanceID int64) (rol
 	err = s.db.QueryRowContext(ctx, `
 		SELECT ugr.role_id
 		FROM instances i
-		JOIN user_group_roles ugr ON ugr.g_id = i.g_id AND ugr.u_id = $1
+		JOIN effective_group_roles ugr ON ugr.g_id = i.g_id AND ugr.u_id = $1
 		WHERE i.i_id = $2`, userID, instanceID).Scan(&role)
 	if err == sql.ErrNoRows {
 		return 0, false, nil

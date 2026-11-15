@@ -21,13 +21,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setGroups(me.groups)
   }, [])
 
-  // Restore a saved session on first load.
+  // Restore a saved session on first load. State is only set from the
+  // promise callbacks (not synchronously in the effect body), and a
+  // cancelled flag ignores the result if the effect is torn down first.
   useEffect(() => {
     if (getToken() === null) return
-    loadProfile()
-      .catch(clear)
-      .finally(() => setLoading(false))
-  }, [loadProfile, clear])
+    let cancelled = false
+    getMe()
+      .then((me) => {
+        if (cancelled) return
+        setUser(me.user)
+        setGroups(me.groups)
+      })
+      .catch(() => {
+        if (!cancelled) clear()
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [clear])
 
   // Any 401 on an authenticated call logs the user out.
   useEffect(() => {

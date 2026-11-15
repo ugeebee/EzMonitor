@@ -4,7 +4,7 @@
 -- rows; the API caps the window at 24 h.
 --
 --   $1 u_id    bigint
---   $2 g_id    bigint|NULL
+--   $2 g_id    bigint|NULL  the group and its subgroups
 --   $3 from    timestamptz
 --   $4 to      timestamptz
 --   $5 metric  metric_kind   ('cpu_util', 'gpu_util', ... ; the enum validates it)
@@ -12,8 +12,9 @@
 WITH scope AS (
     SELECT i.i_id, i.label
     FROM instances i
-    JOIN user_group_roles ugr ON ugr.g_id = i.g_id AND ugr.u_id = $1
-    WHERE $2::bigint IS NULL OR i.g_id = $2
+    JOIN effective_group_roles ugr ON ugr.g_id = i.g_id AND ugr.u_id = $1
+    JOIN groups g ON g.g_id = i.g_id
+    WHERE $2::bigint IS NULL OR i.g_id = $2 OR g.parent_id = $2
 ),
 stats AS (
     SELECT m.i_id,
