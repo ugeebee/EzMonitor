@@ -18,6 +18,7 @@ services:
       EZM_INGEST_PASSWORD: ${EZM_INGEST_PASSWORD:?set EZM_INGEST_PASSWORD in .env}
       EZM_API_PASSWORD: ${EZM_API_PASSWORD:?set EZM_API_PASSWORD in .env}
       EZM_READONLY_PASSWORD: ${EZM_READONLY_PASSWORD:?set EZM_READONLY_PASSWORD in .env}
+      EZM_ALERT_PASSWORD: ${EZM_ALERT_PASSWORD:?set EZM_ALERT_PASSWORD in .env}
       TZ: UTC
     command:
       - postgres
@@ -68,7 +69,7 @@ services:
     command:
       - |
         while true; do
-          psql -X -q -t -v ON_ERROR_STOP=1 -c "SELECT now(), run_maintenance($$RETENTION_DAYS)" \
+          psql -X -q -t -v ON_ERROR_STOP=1 -c "SET client_min_messages = warning" -c "SELECT now(), run_maintenance($$RETENTION_DAYS)" \
             || echo "db-maint: maintenance FAILED"
           sleep 3600
         done
@@ -99,6 +100,8 @@ services:
       INGEST_DATABASE_URL: postgres://ezm_ingest:${EZM_INGEST_PASSWORD}@db:5432/${POSTGRES_DB:-ezmonitor}?sslmode=disable
       API_DATABASE_URL: postgres://ezm_api:${EZM_API_PASSWORD}@db:5432/${POSTGRES_DB:-ezmonitor}?sslmode=disable
       LISTEN_ADDR: ":8080"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (32+ random characters)}
+      ENV: ${EZM_ENV:-development}
     ports:
       - "8080:8080"      # agents post here directly in dev (http://<host>:8080/api/v1/ingest)
 
@@ -112,8 +115,14 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      ALERT_DATABASE_URL: postgres://ezm_owner:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ezmonitor}?sslmode=disable
+      # least-privilege role (migration 000006), not the database owner
+      ALERT_DATABASE_URL: postgres://ezm_alert:${EZM_ALERT_PASSWORD}@db:5432/${POSTGRES_DB:-ezmonitor}?sslmode=disable
     entrypoint: ["/bin/alertworker"]
+
+  frontend:
+    profiles: ["app"]
+    build: ./frontend
+    restart: unless-stopped
 
   caddy:
     image: caddy:2
@@ -121,6 +130,7 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+      - frontend
     environment:
       EZM_DOMAIN: ${EZM_DOMAIN:-localhost}
     ports:

@@ -1,5 +1,5 @@
 -- name: alert_summary
--- Per-rule alert statistics for one group over a window.
+-- Per-rule alert statistics for one group and its subgroups over a window.
 --
 --   $1 u_id  bigint
 --   $2 g_id  bigint
@@ -17,7 +17,7 @@ WITH per_instance AS (
            max(a.alert_value)                                           AS worst_value,
            max(a.triggered_at)                                          AS last_fired
     FROM alert_logs a
-    WHERE a.g_id = $2
+    WHERE (a.g_id = $2 OR a.g_id IN (SELECT s.g_id FROM groups s WHERE s.parent_id = $2))
       AND a.triggered_at >= $3::timestamptz
       AND a.triggered_at <  $4::timestamptz
     GROUP BY a.rule_id, a.i_id
@@ -31,9 +31,10 @@ SELECT r.rule_id, r.metric_name, r.operator, r.threshold_value, r.enabled,
        -- open now, regardless of when they fired (index-only scan on alert_logs_one_active)
        (SELECT count(*) FROM alert_logs x
          WHERE x.rule_id = r.rule_id AND x.status = 'active')             AS active_now
-FROM user_group_roles ugr
+FROM effective_group_roles ugr
+JOIN groups g ON g.g_id = ugr.g_id
 JOIN alert_rules r ON r.g_id = ugr.g_id
 LEFT JOIN per_instance p ON p.rule_id = r.rule_id
-WHERE ugr.u_id = $1 AND ugr.g_id = $2
+WHERE ugr.u_id = $1 AND (ugr.g_id = $2 OR g.parent_id = $2)
 GROUP BY r.rule_id
 ORDER BY fired DESC, r.rule_id;

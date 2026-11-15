@@ -7,9 +7,11 @@ set -euo pipefail
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
      -v ingest_pw="$EZM_INGEST_PASSWORD" \
      -v api_pw="$EZM_API_PASSWORD" \
-     -v ro_pw="$EZM_READONLY_PASSWORD" <<'EOSQL'
+     -v ro_pw="$EZM_READONLY_PASSWORD" \
+     -v alert_pw="$EZM_ALERT_PASSWORD" <<'EOSQL'
 CREATE ROLE ezm_ingest   LOGIN PASSWORD :'ingest_pw' CONNECTION LIMIT 50;
 CREATE ROLE ezm_api      LOGIN PASSWORD :'api_pw'    CONNECTION LIMIT 50;
 CREATE ROLE ezm_readonly LOGIN PASSWORD :'ro_pw'     CONNECTION LIMIT 10;
+CREATE ROLE ezm_alert    LOGIN PASSWORD :'alert_pw'  CONNECTION LIMIT 5;
 ALTER DATABASE :"DBNAME" SET timezone TO 'UTC';
 EOSQL

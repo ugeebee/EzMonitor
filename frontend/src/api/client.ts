@@ -1,4 +1,6 @@
-const BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8080').replace(/\/$/, '')
+// Empty or unset VITE_API_URL = same origin: behind Caddy in Docker, or via
+// the Vite dev proxy (vite.config.ts) in development.
+const BASE_URL = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '')
 const TOKEN_KEY = 'ezm_token'
 
 export class ApiError extends Error {

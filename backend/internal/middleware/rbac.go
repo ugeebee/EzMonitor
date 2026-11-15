@@ -16,37 +16,23 @@ type groupRoleKey string
 
 const GroupRoleContextKey groupRoleKey = "groupRole"
 
-// GetEffectiveRoleInGroup checks a user's role in a group or subgroup.
-// If checking a subgroup, a top-level Admin of the parent group inherits RoleAdmin.
+// GetEffectiveRoleInGroup returns a user's role in a group or subgroup, or 0
+// if they have none. The rule lives in the database view effective_group_roles
+// (migration 000006) so the dashboard queries use exactly the same one:
+// a direct role wins; otherwise an Admin of the parent group is Admin of the
+// subgroup.
 func GetEffectiveRoleInGroup(ctx context.Context, db *pgxpool.Pool, uID, gID int64) (int16, error) {
-	// 1. Check direct role in this group/subgroup
-	var directRole int16
-	queryDirect := `SELECT role_id FROM user_group_roles WHERE u_id = $1 AND g_id = $2`
-	err := db.QueryRow(ctx, queryDirect, uID, gID).Scan(&directRole)
-	if err == nil {
-		return directRole, nil
+	var role int16
+	err := db.QueryRow(ctx,
+		`SELECT role_id FROM effective_group_roles WHERE u_id = $1 AND g_id = $2`,
+		uID, gID).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil // not a member
 	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil {
 		return 0, err
 	}
-
-	// 2. Check if gID is a subgroup and user is Admin of parent group
-	queryInherited := `
-		SELECT ugr.role_id
-		FROM groups g
-		JOIN user_group_roles ugr ON g.parent_id = ugr.g_id
-		WHERE g.g_id = $1 AND ugr.u_id = $2 AND ugr.role_id = $3
-	`
-	var parentRole int16
-	err = db.QueryRow(ctx, queryInherited, gID, uID, models.RoleAdmin).Scan(&parentRole)
-	if err == nil {
-		return models.RoleAdmin, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return 0, err
-	}
-
-	return 0, nil // Not a member
+	return role, nil
 }
 
 // RequireGroupAdmin enforces that the authenticated user is an Admin of the group in URL param {groupId}.

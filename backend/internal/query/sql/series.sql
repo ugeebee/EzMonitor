@@ -1,8 +1,8 @@
 -- name: series
 -- Time-bucketed metrics for one instance or a whole group (dashboard charts).
 --
---   $1 u_id    bigint       caller (RBAC: only groups in user_group_roles)
---   $2 g_id    bigint|NULL  group filter
+--   $1 u_id    bigint       caller (RBAC: effective_group_roles)
+--   $2 g_id    bigint|NULL  group filter (the group and its subgroups)
 --   $3 i_id    bigint|NULL  instance filter (at least one of $2/$3 is set by the API)
 --   $4 keys    text[]       label filter keys   (instance must match ALL pairs)
 --   $5 values  text[]       label filter values (same length as $4)
@@ -16,8 +16,9 @@
 WITH scope AS (
     SELECT i.i_id, i.label
     FROM instances i
-    JOIN user_group_roles ugr ON ugr.g_id = i.g_id AND ugr.u_id = $1
-    WHERE ($2::bigint IS NULL OR i.g_id = $2)
+    JOIN effective_group_roles ugr ON ugr.g_id = i.g_id AND ugr.u_id = $1
+    JOIN groups g ON g.g_id = i.g_id
+    WHERE ($2::bigint IS NULL OR i.g_id = $2 OR g.parent_id = $2)
       AND ($3::bigint IS NULL OR i.i_id = $3)
       -- relational division: no requested (key, value) pair is missing on i
       AND NOT EXISTS (

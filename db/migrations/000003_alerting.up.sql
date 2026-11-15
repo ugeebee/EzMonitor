@@ -22,7 +22,7 @@ BEGIN;
 --    Uses transition table `new_rows` (one event per trigger, hence two
 --    triggers).
 --
---    Logic per (sample, rule) pair:
+--    Logic per (rule, instance) pair, samples taken in time order:
 --      • Extract the metric value from the sample using a CASE over
 --        metric_kind.
 --      • Evaluate the comparison operator using a CASE over cmp_op.
@@ -38,143 +38,99 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-    -- ── Fire new alerts ─────────────────────────────────────────────
-    -- For every (sample, rule) pair where the threshold condition is
-    -- met, attempt to insert an active alert.  The unique partial
-    -- index alert_logs_one_active ensures at most one active alert
-    -- per (rule_id, i_id), so the ON CONFLICT clause makes this a
-    -- no-op when an alert is already active.
+    -- A batch can hold several samples per instance (the agent flushes 5 at
+    -- a time; backfills and BR4 re-deliveries send more). Evaluating every
+    -- sample independently let an EARLIER normal sample "resolve" an alert a
+    -- LATER sample fired, writing resolved_at < triggered_at; the CHECK on
+    -- alert_logs then rejected the whole ingest batch, so samples were lost
+    -- exactly during incidents. Each (rule, instance) pair is now evaluated
+    -- in time order:
+    --   fire    : at its FIRST breaching sample in the batch
+    --   resolve : only if its LATEST sample is within the threshold, at that
+    --             sample's time, and never before the alert's own start
+    -- The same CTE is repeated in both statements so the UPDATE runs after
+    -- the INSERT and can resolve an alert fired earlier in the same batch.
+
+    -- ── Fire ────────────────────────────────────────────────────────
+    WITH evaluated AS (
+        SELECT ar.rule_id, n.i_id, inst.g_id, n.recorded_at, v.val,
+               CASE ar.operator
+                   WHEN '>'  THEN v.val >  ar.threshold_value
+                   WHEN '>=' THEN v.val >= ar.threshold_value
+                   WHEN '<'  THEN v.val <  ar.threshold_value
+                   WHEN '<=' THEN v.val <= ar.threshold_value
+               END AS breached
+        FROM new_rows n
+        JOIN instances inst
+          ON inst.i_id = n.i_id
+         AND inst.enabled                       -- skip disabled instances
+        JOIN alert_rules ar
+          ON ar.g_id = inst.g_id
+         AND ar.enabled                         -- skip disabled rules
+        CROSS JOIN LATERAL (
+            SELECT CASE ar.metric_name
+                       WHEN 'cpu_util'      THEN n.cpu_util::double precision
+                       WHEN 'gpu_util'      THEN n.gpu_util::double precision
+                       WHEN 'ram_util'      THEN n.ram_util::double precision
+                       WHEN 'uptime'        THEN n.uptime::double precision
+                       WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
+                       WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
+                   END AS val
+        ) v
+        WHERE v.val IS NOT NULL                 -- no GPU: gpu rules are not evaluated
+    )
     INSERT INTO alert_logs (rule_id, i_id, g_id, alert_value, triggered_at)
-    SELECT
-        ar.rule_id,
-        n.i_id,
-        inst.g_id,
-        -- Extract the metric value that this rule monitors
-        CASE ar.metric_name
-            WHEN 'cpu_util'      THEN n.cpu_util::double precision
-            WHEN 'gpu_util'      THEN COALESCE(n.gpu_util, 0)::double precision
-            WHEN 'ram_util'      THEN n.ram_util::double precision
-            WHEN 'uptime'        THEN n.uptime::double precision
-            WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
-            WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
-        END,
-        n.recorded_at
-    FROM new_rows n
-    JOIN instances inst
-        ON inst.i_id = n.i_id
-       AND inst.enabled                       -- skip disabled instances
-    JOIN alert_rules ar
-        ON ar.g_id = inst.g_id
-       AND ar.enabled                         -- skip disabled rules
-    WHERE
-        -- Evaluate the comparison: metric_value <op> threshold
-        CASE ar.operator
-            WHEN '>'  THEN
-                CASE ar.metric_name
-                    WHEN 'cpu_util'      THEN n.cpu_util::double precision
-                    WHEN 'gpu_util'      THEN COALESCE(n.gpu_util, 0)::double precision
-                    WHEN 'ram_util'      THEN n.ram_util::double precision
-                    WHEN 'uptime'        THEN n.uptime::double precision
-                    WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
-                    WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
-                END > ar.threshold_value
-            WHEN '>=' THEN
-                CASE ar.metric_name
-                    WHEN 'cpu_util'      THEN n.cpu_util::double precision
-                    WHEN 'gpu_util'      THEN COALESCE(n.gpu_util, 0)::double precision
-                    WHEN 'ram_util'      THEN n.ram_util::double precision
-                    WHEN 'uptime'        THEN n.uptime::double precision
-                    WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
-                    WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
-                END >= ar.threshold_value
-            WHEN '<'  THEN
-                CASE ar.metric_name
-                    WHEN 'cpu_util'      THEN n.cpu_util::double precision
-                    WHEN 'gpu_util'      THEN COALESCE(n.gpu_util, 0)::double precision
-                    WHEN 'ram_util'      THEN n.ram_util::double precision
-                    WHEN 'uptime'        THEN n.uptime::double precision
-                    WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
-                    WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
-                END < ar.threshold_value
-            WHEN '<=' THEN
-                CASE ar.metric_name
-                    WHEN 'cpu_util'      THEN n.cpu_util::double precision
-                    WHEN 'gpu_util'      THEN COALESCE(n.gpu_util, 0)::double precision
-                    WHEN 'ram_util'      THEN n.ram_util::double precision
-                    WHEN 'uptime'        THEN n.uptime::double precision
-                    WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
-                    WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
-                END <= ar.threshold_value
-        END
+    SELECT DISTINCT ON (e.rule_id, e.i_id)
+           e.rule_id, e.i_id, e.g_id, e.val, e.recorded_at
+    FROM evaluated e
+    WHERE e.breached
+    ORDER BY e.rule_id, e.i_id, e.recorded_at
     ON CONFLICT (rule_id, i_id) WHERE status = 'active'
     DO NOTHING;
 
-    -- ── Resolve stale alerts ────────────────────────────────────────
-    -- For every (sample, rule) pair where the threshold condition is
-    -- NO LONGER met, mark the currently-active alert as resolved.
-    -- br7_freeze_resolved prevents any further modification to the
-    -- resolved row, so a re-fire will create a new alert_logs entry.
-    UPDATE alert_logs al
-    SET    status      = 'resolved',
-           resolved_at = sub.recorded_at
-    FROM (
-        SELECT
-            ar.rule_id,
-            n.i_id,
-            n.recorded_at
+    -- ── Resolve ─────────────────────────────────────────────────────
+    WITH evaluated AS (
+        SELECT ar.rule_id, n.i_id, inst.g_id, n.recorded_at, v.val,
+               CASE ar.operator
+                   WHEN '>'  THEN v.val >  ar.threshold_value
+                   WHEN '>=' THEN v.val >= ar.threshold_value
+                   WHEN '<'  THEN v.val <  ar.threshold_value
+                   WHEN '<=' THEN v.val <= ar.threshold_value
+               END AS breached
         FROM new_rows n
         JOIN instances inst
-            ON inst.i_id = n.i_id
-           AND inst.enabled
+          ON inst.i_id = n.i_id
+         AND inst.enabled                       -- skip disabled instances
         JOIN alert_rules ar
-            ON ar.g_id = inst.g_id
-           AND ar.enabled
-        WHERE
-            -- Condition is FALSE → resolve
-            NOT (
-                CASE ar.operator
-                    WHEN '>'  THEN
-                        CASE ar.metric_name
-                            WHEN 'cpu_util'      THEN n.cpu_util::double precision
-                            WHEN 'gpu_util'      THEN COALESCE(n.gpu_util, 0)::double precision
-                            WHEN 'ram_util'      THEN n.ram_util::double precision
-                            WHEN 'uptime'        THEN n.uptime::double precision
-                            WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
-                            WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
-                        END > ar.threshold_value
-                    WHEN '>=' THEN
-                        CASE ar.metric_name
-                            WHEN 'cpu_util'      THEN n.cpu_util::double precision
-                            WHEN 'gpu_util'      THEN COALESCE(n.gpu_util, 0)::double precision
-                            WHEN 'ram_util'      THEN n.ram_util::double precision
-                            WHEN 'uptime'        THEN n.uptime::double precision
-                            WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
-                            WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
-                        END >= ar.threshold_value
-                    WHEN '<'  THEN
-                        CASE ar.metric_name
-                            WHEN 'cpu_util'      THEN n.cpu_util::double precision
-                            WHEN 'gpu_util'      THEN COALESCE(n.gpu_util, 0)::double precision
-                            WHEN 'ram_util'      THEN n.ram_util::double precision
-                            WHEN 'uptime'        THEN n.uptime::double precision
-                            WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
-                            WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
-                        END < ar.threshold_value
-                    WHEN '<=' THEN
-                        CASE ar.metric_name
-                            WHEN 'cpu_util'      THEN n.cpu_util::double precision
-                            WHEN 'gpu_util'      THEN COALESCE(n.gpu_util, 0)::double precision
-                            WHEN 'ram_util'      THEN n.ram_util::double precision
-                            WHEN 'uptime'        THEN n.uptime::double precision
-                            WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
-                            WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
-                        END <= ar.threshold_value
-                END
-            )
-    ) sub
-    WHERE al.rule_id = sub.rule_id
-      AND al.i_id    = sub.i_id
-      AND al.status  = 'active';
+          ON ar.g_id = inst.g_id
+         AND ar.enabled                         -- skip disabled rules
+        CROSS JOIN LATERAL (
+            SELECT CASE ar.metric_name
+                       WHEN 'cpu_util'      THEN n.cpu_util::double precision
+                       WHEN 'gpu_util'      THEN n.gpu_util::double precision
+                       WHEN 'ram_util'      THEN n.ram_util::double precision
+                       WHEN 'uptime'        THEN n.uptime::double precision
+                       WHEN 'net_up_kbps'   THEN n.net_up_kbps::double precision
+                       WHEN 'net_down_kbps' THEN n.net_down_kbps::double precision
+                   END AS val
+        ) v
+        WHERE v.val IS NOT NULL                 -- no GPU: gpu rules are not evaluated
+    ),
+    latest AS (
+        SELECT DISTINCT ON (e.rule_id, e.i_id)
+               e.rule_id, e.i_id, e.recorded_at, e.breached
+        FROM evaluated e
+        ORDER BY e.rule_id, e.i_id, e.recorded_at DESC
+    )
+    UPDATE alert_logs al
+    SET    status      = 'resolved',
+           resolved_at = l.recorded_at
+    FROM latest l
+    WHERE NOT l.breached
+      AND al.rule_id      = l.rule_id
+      AND al.i_id         = l.i_id
+      AND al.status       = 'active'
+      AND al.triggered_at <= l.recorded_at;
 
     RETURN NULL;   -- statement-level trigger must return NULL
 END;

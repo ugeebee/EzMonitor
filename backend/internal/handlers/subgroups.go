@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -125,16 +126,16 @@ func (h *SubgroupHandler) ListSubgroups(w http.ResponseWriter, r *http.Request) 
 	for rows.Next() {
 		var item SubgroupItem
 		var parentRef *int64
-		var dateStr string
+		var created time.Time
 
-		if err := rows.Scan(&item.GID, &parentRef, &item.Label, &dateStr, &item.InstancesCount, &item.MembersCount); err != nil {
+		if err := rows.Scan(&item.GID, &parentRef, &item.Label, &created, &item.InstancesCount, &item.MembersCount); err != nil {
 			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to parse subgroup data"})
 			return
 		}
 		if parentRef != nil {
 			item.ParentID = *parentRef
 		}
-		item.DateCreated = dateStr
+		item.DateCreated = created.UTC().Format(time.RFC3339Nano)
 
 		// Resolve caller's effective role in this subgroup
 		roleID, _ := middleware.GetEffectiveRoleInGroup(ctx, h.db, claims.UID, item.GID)

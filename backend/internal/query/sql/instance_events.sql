@@ -11,7 +11,7 @@
 WITH inst AS (
     SELECT i.i_id
     FROM instances i
-    JOIN user_group_roles ugr ON ugr.g_id = i.g_id AND ugr.u_id = $1
+    JOIN effective_group_roles ugr ON ugr.g_id = i.g_id AND ugr.u_id = $1
     WHERE i.i_id = $2
 ),
 s AS (

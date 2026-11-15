@@ -1,5 +1,5 @@
 -- =====================================================================
--- 000004_query_indexes: read path for dashboards (Diveshraju)
+-- 000005_query_indexes: read path for dashboards (Diveshraju)
 --
 -- 1. metrics_rollup_5m: 5-minute pre-aggregates of metrics_data.
 --    A dashboard asking for 7 days of one instance reads 2,016 rollup rows

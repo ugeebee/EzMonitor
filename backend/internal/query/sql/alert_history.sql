@@ -1,5 +1,5 @@
 -- name: alert_history
--- Alert log for one group, newest first, keyset-paginated.
+-- Alert log for one group and its subgroups, newest first, keyset-paginated.
 -- Pass the (triggered_at, a_id) of the last row of the previous page as the
 -- cursor; NULLs fetch the first page. Each page is a range scan on
 -- alert_logs_group_time_idx (g_id, triggered_at DESC) plus an incremental
@@ -18,8 +18,8 @@ SELECT a.a_id, a.rule_id, r.metric_name, r.operator, r.threshold_value,
 FROM alert_logs a
 JOIN alert_rules r ON r.rule_id = a.rule_id
 JOIN instances   i ON i.i_id    = a.i_id
-WHERE a.g_id = $2
-  AND EXISTS (SELECT 1 FROM user_group_roles ugr WHERE ugr.u_id = $1 AND ugr.g_id = $2)
+WHERE (a.g_id = $2 OR a.g_id IN (SELECT s.g_id FROM groups s WHERE s.parent_id = $2))
+  AND EXISTS (SELECT 1 FROM effective_group_roles ugr WHERE ugr.u_id = $1 AND ugr.g_id = a.g_id)
   AND (a.triggered_at, a.a_id) < (coalesce($3::timestamptz, 'infinity'),
                                   coalesce($4::bigint, 9223372036854775807))
   AND ($5::alert_status IS NULL OR a.status = $5)

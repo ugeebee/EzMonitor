@@ -8,6 +8,7 @@ Owner: Harsha (data infrastructure and schema). PostgreSQL 16, migrations applie
 cp .env.example .env                              # set passwords (letters/digits only)
 docker compose up -d                              # db + migrate + db-maint
 docker compose --profile seed run --rm seed       # dev users, 11 instances, ~403k samples
+docker compose --profile app up -d --build        # backend, alert-worker, frontend, caddy -> http://localhost
 psql postgres://ezm_owner:<pw>@localhost:5432/ezmonitor
 ```
 
@@ -20,24 +21,29 @@ To start from scratch: `docker compose down -v`.
 |---|---|
 | `migrations/000001_schema` | 11 tables, enums, partitioning, T1 and BR7 triggers |
 | `migrations/000002_privileges` | grants for `ezm_ingest`, `ezm_api`, `ezm_readonly` |
-| `migrations/000004_query_indexes` | 5-minute rollup (`metrics_rollup_5m`), invalidation triggers, refresh in `run_maintenance()`; see `QUERIES.md` |
+| `migrations/000003_alerting` | alert evaluation + NOTIFY triggers (Aayush) |
+| `migrations/000004_subgroups_and_roles` | `groups.parent_id`; role 2 renamed `subadmin` (Utkarsh) |
+| `migrations/000005_query_indexes` | 5-minute rollup (`metrics_rollup_5m`), invalidation triggers, refresh in `run_maintenance()`; see `QUERIES.md` (Diveshraju) |
+| `migrations/000006_effective_roles` | `effective_group_roles` view (one RBAC rule for API and dashboards), `user_group_roles.date_joined`, `ezm_alert` role |
 | `QUERIES.md` | dashboard queries, rollup design, `EXPLAIN ANALYZE` measurements, index decisions |
 | `bench/run.sh` | reproduces the measurements in `QUERIES.md` |
-| `init/01-login-roles.sh` | creates the three login roles with passwords from `.env` |
+| `init/01-login-roles.sh` | creates the four login roles (`ezm_ingest`, `ezm_api`, `ezm_readonly`, `ezm_alert`) from `.env` |
 | `seed/dev_seed.sql` | dev users, groups, instances, rules, webhook |
 | `seed/backfill_metrics.sql` | synthetic history (`-v days=7 -v step=15` by default) |
 
-**Migration numbering:** `000003_alerting` belongs to Aayush (alert evaluation and notify triggers),
-`000004_query_indexes` to Diveshraju. Never edit a migration that has been merged; add a new one.
+**Migration numbering:** one number per migration, team-wide. Before opening a PR, check the
+highest number on `main` and take the next one; golang-migrate refuses to start if two files share
+a number. Never edit a migration that has been merged; add a new one.
 
 ## Tables
 
 | Table | Key | Notes |
 |---|---|---|
-| `roles` | `role_id` | fixed: 1 admin, 2 editor, 3 viewer |
+| `roles` | `role_id` | fixed: 1 admin, 2 subadmin, 3 viewer |
 | `users` | `u_id` | `email` is citext, unique, format-checked |
 | `groups` | `g_id` | tenant |
-| `user_group_roles` | `(u_id, g_id)` | one role per user per group |
+| `user_group_roles` | `(u_id, g_id)` | one role per user per group; `date_joined` |
+| `effective_group_roles` (view) | `(u_id, g_id)` | direct roles + admin inherited from the parent group. **Use this for every access check** |
 | `instances` | `i_id` | `fingerprint` (16 hex), `token_hash` (sha256 hex), `enabled`, `status`, `last_seen_at`; label unique per group |
 | `instance_labels` | `(i_id, label_key)` | key/value labels, e.g. `env=prod` |
 | `metrics_data` | `(i_id, recorded_at)` | partitioned by UTC day; `cpu_util`, `gpu_util` (NULL = no GPU), `ram_util`, `uptime` (s), `net_up_kbps`, `net_down_kbps` |
@@ -55,8 +61,10 @@ To start from scratch: `docker compose down -v`.
 | `ezm_ingest` | ingest handler | read `instances(i_id, g_id, token_hash, enabled)`, update `last_seen_at/status`, insert/upsert `metrics_data` |
 | `ezm_api` | dashboard/config API | CRUD on config tables, read metrics, read/resolve alerts |
 | `ezm_readonly` | reports, debugging | read everything except `hash_pass`, `token_hash`, webhook `secret` |
+| `ezm_alert` | alert worker | `LISTEN alert_fired`; read rules, rule-webhook links, webhooks, instance labels |
 
-The backend gets `INGEST_DATABASE_URL` and `API_DATABASE_URL` from compose. Two pgx pools.
+The backend gets `INGEST_DATABASE_URL` and `API_DATABASE_URL` from compose (two pgx pools; the
+dashboard read API shares the API pool through `pgx/stdlib`). The alert worker gets `ALERT_DATABASE_URL`.
 
 ## For Utkarsh (ingest)
 
