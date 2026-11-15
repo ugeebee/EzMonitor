@@ -14,14 +14,14 @@ import (
 const DefaultServerURL = "http://localhost:8080/api/v1/ingest"
 
 type Agent struct {
-	InstanceID int
+	InstanceID int64
 	Token      string
 	ServerURL  string
 	BatchSize  int
 	httpClient *http.Client
 }
 
-func NewAgent(id int, token, url string, batchSize int) *Agent {
+func NewAgent(id int64, token, url string, batchSize int) *Agent {
 	if url == "" {
 		url = DefaultServerURL
 	}
@@ -59,20 +59,20 @@ func (a *Agent) Start(ctx context.Context) error {
 			downSpeed, upSpeed := CalculateNetworkSpeeds(prevNet, currNet)
 
 			sample := models.MetricSample{
-				RecordedAt: time.Now().UTC().Truncate(time.Second),
-				CPUUtil:    CalculateCPUUtil(prevCPU, currCPU),
-				GPUUtil:    GetGPUUtil(),
-				RAMUtil:    GetRAMUtil(),
-				Uptime:     GetUptime(),
-				UpSpeed:    upSpeed,
-				DownSpeed:  downSpeed,
+				RecordedAt:  time.Now().UTC().Truncate(time.Second),
+				CPUUtil:     CalculateCPUUtil(prevCPU, currCPU),
+				GPUUtil:     GetGPUUtil(),
+				RAMUtil:     GetRAMUtil(),
+				Uptime:      GetUptime(),
+				NetUpKBPS:   upSpeed,
+				NetDownKBPS: downSpeed,
 			}
 			prevCPU = currCPU
 			prevNet = currNet
 
 			batch = append(batch, sample)
 			log.Printf("Scraped | CPU: %.2f%% | RAM: %.2f%% | Down: %.1f KB/s | Up: %.1f KB/s",
-				sample.CPUUtil, sample.RAMUtil, sample.DownSpeed, sample.UpSpeed)
+				sample.CPUUtil, sample.RAMUtil, sample.NetDownKBPS, sample.NetUpKBPS)
 
 			if len(batch) >= a.BatchSize {
 				a.flush(batch)

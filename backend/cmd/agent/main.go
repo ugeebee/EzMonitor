@@ -17,7 +17,7 @@ const configFilename = "agent_config.json"
 const defaultServerURL = "http://localhost:8080/api/v1/ingest"
 
 type AgentConfig struct {
-	InstanceID  int    `json:"instance_id"`
+	InstanceID  int64  `json:"instance_id"`
 	Token       string `json:"token"`
 	Fingerprint string `json:"fingerprint"`
 }
@@ -53,7 +53,7 @@ func loadOrSetupConfig() AgentConfig {
 	fmt.Println("3. Register the instance using the fingerprint above.")
 	fmt.Println("--------------------------------------------------")
 
-	var instanceID int
+	var instanceID int64
 	fmt.Print("Enter the integer Instance ID provided by the UI: ")
 	if _, err := fmt.Scan(&instanceID); err != nil || instanceID == 0 {
 		log.Fatalf("Invalid Instance ID. Setup aborted.")

@@ -102,6 +102,19 @@ services:
     ports:
       - "8080:8080"      # agents post here directly in dev (http://<host>:8080/api/v1/ingest)
 
+  alert-worker:
+    profiles: ["app"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      ALERT_DATABASE_URL: postgres://ezm_owner:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ezmonitor}?sslmode=disable
+    entrypoint: ["/bin/alertworker"]
+
   caddy:
     image: caddy:2
     profiles: ["app"]

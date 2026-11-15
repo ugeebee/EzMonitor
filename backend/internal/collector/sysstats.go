@@ -128,14 +128,17 @@ func GetUptime() int64 {
 	return 0
 }
 
-func GetGPUUtil() float64 {
+func GetGPUUtil() *float64 {
 	cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
 	out, err := cmd.Output()
 	if err != nil {
-		return 0.0
+		return nil
 	}
-	val, _ := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
-	return val
+	val, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	if err != nil {
+		return nil
+	}
+	return &val
 }
 
 func GetCPUName() string {
