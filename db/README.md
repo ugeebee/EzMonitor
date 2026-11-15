@@ -20,6 +20,9 @@ To start from scratch: `docker compose down -v`.
 |---|---|
 | `migrations/000001_schema` | 11 tables, enums, partitioning, T1 and BR7 triggers |
 | `migrations/000002_privileges` | grants for `ezm_ingest`, `ezm_api`, `ezm_readonly` |
+| `migrations/000004_query_indexes` | 5-minute rollup (`metrics_rollup_5m`), invalidation triggers, refresh in `run_maintenance()`; see `QUERIES.md` |
+| `QUERIES.md` | dashboard queries, rollup design, `EXPLAIN ANALYZE` measurements, index decisions |
+| `bench/run.sh` | reproduces the measurements in `QUERIES.md` |
 | `init/01-login-roles.sh` | creates the three login roles with passwords from `.env` |
 | `seed/dev_seed.sql` | dev users, groups, instances, rules, webhook |
 | `seed/backfill_metrics.sql` | synthetic history (`-v days=7 -v step=15` by default) |
@@ -42,6 +45,8 @@ To start from scratch: `docker compose down -v`.
 | `alert_logs` | `a_id` | `status` active/resolved; one active per (rule, instance); resolved rows are frozen |
 | `webhooks` | `web_id` | https only, `secret` for HMAC signing |
 | `alert_rule_webhooks` | `(rule_id, web_id)` | which webhooks a rule notifies; same group enforced by FK |
+| `metrics_rollup_5m` | `(i_id, bucket)` | derived: 5-min SUM/MIN/MAX/count of `metrics_data`; never written by the app |
+| `metrics_rollup_state` | singleton | rollup `watermark` and `dirty_from` (see `QUERIES.md`) |
 
 ## Database roles
 
@@ -94,3 +99,10 @@ Dev credentials: instance `1`, token `dev-token-0001`. Instance 10 is disabled (
 - The PK `(i_id, recorded_at)` already covers per-instance range scans; BRIN on `recorded_at`
   covers all-instance scans. Add indexes in `000004`, with `EXPLAIN ANALYZE` evidence.
 - Filter tenants through `user_group_roles`; never trust a `g_id` sent by the client.
+
+Done: see [`QUERIES.md`](QUERIES.md) (queries, rollup, measurements) and
+[`backend/internal/query/README.md`](../backend/internal/query/README.md) (API for the frontend).
+The rollup needs no action from ingest or seeding: writes older than the rollup watermark
+(including `backfill_metrics.sql`) mark it dirty, dashboards fall back to raw rows for that range,
+and the next hourly `run_maintenance()` rebuilds it. Run `SELECT refresh_metrics_rollup();` to
+rebuild immediately after a large backfill.
