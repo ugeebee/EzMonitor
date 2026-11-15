@@ -22,6 +22,9 @@ SET client_min_messages = warning;
 SELECT count(*) AS partitions_ensured
 FROM (SELECT create_metrics_partition(current_date - d) FROM generate_series(0, :days) AS d) x;
 
+-- Disable alert evaluation trigger during bulk historic backfill (prevents transition table resolution conflicts)
+ALTER TABLE metrics_data DISABLE TRIGGER t2_evaluate_alerts_on_insert;
+
 INSERT INTO metrics_data (i_id, recorded_at, cpu_util, gpu_util, ram_util,
                           uptime, net_up_kbps, net_down_kbps)
 SELECT i.i_id,
@@ -44,7 +47,24 @@ CROSS JOIN LATERAL (SELECT 2 * pi() * extract(epoch FROM ts) / 86400 AS phase) p
 WHERE i.enabled
 ON CONFLICT (i_id, recorded_at) DO NOTHING;
 
+ALTER TABLE metrics_data ENABLE TRIGGER t2_evaluate_alerts_on_insert;
+
 ANALYZE metrics_data;
+
+-- Seed test active and resolved alerts for testing dashboards
+INSERT INTO alert_logs (rule_id, i_id, g_id, alert_value, triggered_at, status)
+SELECT r.rule_id, i.i_id, i.g_id, 94.5, now() - interval '15 minutes', 'active'
+FROM alert_rules r
+JOIN instances i ON i.g_id = r.g_id
+WHERE r.metric_name = 'cpu_util' AND i.label = 'dev-box-01'
+ON CONFLICT (rule_id, i_id) WHERE status = 'active' DO NOTHING;
+
+INSERT INTO alert_logs (rule_id, i_id, g_id, alert_value, triggered_at, resolved_at, status)
+SELECT r.rule_id, i.i_id, i.g_id, 92.1, now() - interval '2 days', now() - interval '2 days' + interval '20 minutes', 'resolved'
+FROM alert_rules r
+JOIN instances i ON i.g_id = r.g_id
+WHERE r.metric_name = 'cpu_util' AND i.label = 'dev-box-02'
+ON CONFLICT DO NOTHING;
 
 -- Update instances last_seen_at and status so dashboard views show live reporting status
 UPDATE instances
