@@ -13,9 +13,13 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the server and alertworker binaries
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/server ./cmd/server && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/alertworker ./cmd/alertworker
+# Build the server, alertworker, and agent binaries
+RUN mkdir -p /app/downloads && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/alertworker ./cmd/alertworker && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/downloads/ezmonitor-agent ./cmd/agent && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/downloads/ezmonitor-agent-linux-amd64 ./cmd/agent && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-w -s" -o /app/downloads/ezmonitor-agent-linux-arm64 ./cmd/agent
 
 # Final runtime image
 FROM alpine:3.20
@@ -27,6 +31,7 @@ RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /app/server /app/server
 COPY --from=builder /app/server /bin/server
 COPY --from=builder /app/alertworker /bin/alertworker
+COPY --from=builder /app/downloads /app/downloads
 
 EXPOSE 8080
 

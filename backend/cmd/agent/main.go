@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -174,9 +175,21 @@ func main() {
 	}
 
 	batchSize := flag.Int("batch-size", 5, "Number of metrics to batch before flushing")
+	server := flag.String("server", "", "Base EzMonitor server URL (e.g. https://ezmonitor.ugbhartariya.com or http://localhost:8080)")
 	wsURL := flag.String("ws-url", defaultWSURL, "WebSocket pairing URL for the backend server")
 	serverURL := flag.String("server-url", defaultServerURL, "Ingest URL for flushing metric batches")
 	flag.Parse()
+
+	if *server != "" {
+		base := strings.TrimRight(*server, "/")
+		wsScheme := "ws://"
+		if strings.HasPrefix(base, "https://") {
+			wsScheme = "wss://"
+		}
+		hostPath := strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://")
+		*wsURL = wsScheme + hostPath + "/api/v1/agent/pair/ws"
+		*serverURL = base + "/api/v1/ingest"
+	}
 
 	cfg := loadOrSetupConfig(*wsURL)
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -107,8 +108,91 @@ func main() {
 		fmt.Fprintf(w, `{"status":"ok","time":"%s"}`, time.Now().UTC().Format(time.RFC3339))
 	})
 
+	// Static downloads for agent binaries and install script
+	downloadsDir := "/app/downloads"
+	if _, err := os.Stat(downloadsDir); os.IsNotExist(err) {
+		downloadsDir = "./downloads"
+		if _, err := os.Stat(downloadsDir); os.IsNotExist(err) {
+			downloadsDir = "../downloads"
+		}
+	}
+
+	serveDownload := func(w http.ResponseWriter, r *http.Request) {
+		filename := chi.URLParam(r, "filename")
+		if filename == "" {
+			filename = "ezmonitor-agent"
+		}
+		cleanFilename := filepath.Base(filename)
+		filePath := filepath.Join(downloadsDir, cleanFilename)
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			http.Error(w, "Binary not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", cleanFilename))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		http.ServeFile(w, r, filePath)
+	}
+
+	serveInstallScript := func(w http.ResponseWriter, r *http.Request) {
+		proto := "http"
+		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			proto = "https"
+		}
+		host := r.Host
+		if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+			host = forwardedHost
+		}
+		serverURL := fmt.Sprintf("%s://%s", proto, host)
+
+		script := fmt.Sprintf(`#!/bin/sh
+set -e
+
+SERVER="%s"
+ARCH=$(uname -m)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+case "$ARCH" in
+  x86_64|amd64) BIN="ezmonitor-agent-linux-amd64" ;;
+  aarch64|arm64) BIN="ezmonitor-agent-linux-arm64" ;;
+  *) BIN="ezmonitor-agent" ;;
+esac
+
+echo "=================================================="
+echo "          EzMonitor Agent Auto-Installer          "
+echo "=================================================="
+echo "Detected system: $OS / $ARCH"
+echo "Downloading $BIN from $SERVER..."
+
+if curl -sSLf "$SERVER/downloads/$BIN" -o ezmonitor-agent; then
+    echo "Downloaded $BIN successfully."
+elif curl -sSLf "$SERVER/downloads/ezmonitor-agent" -o ezmonitor-agent; then
+    echo "Downloaded default agent binary."
+else
+    echo "Error: failed to download agent binary from $SERVER."
+    exit 1
+fi
+
+chmod +x ezmonitor-agent
+echo "Starting EzMonitor Agent..."
+echo "--------------------------------------------------"
+exec ./ezmonitor-agent -server "$SERVER"
+`, serverURL)
+
+		w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(script))
+	}
+
+	// Mount download routes at root
+	r.Get("/install.sh", serveInstallScript)
+	r.Get("/downloads/{filename}", serveDownload)
+	r.Get("/downloads", serveDownload)
+
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/install.sh", serveInstallScript)
+		r.Get("/downloads/{filename}", serveDownload)
+		r.Get("/downloads", serveDownload)
 		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintf(w, `{"status":"ok","service":"ezmonitor-backend","time":"%s"}`, time.Now().UTC().Format(time.RFC3339))
