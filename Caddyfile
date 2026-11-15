@@ -6,6 +6,14 @@
 		reverse_proxy backend:8080
 	}
 
+	handle /downloads/* {
+		reverse_proxy backend:8080
+	}
+
+	handle /install.sh {
+		reverse_proxy backend:8080
+	}
+
 	handle {
 		reverse_proxy frontend:5173 {
 			header_up Host localhost:5173

@@ -68,6 +68,10 @@ export default function GroupPage() {
   const [pairFingerprint, setPairFingerprint] = useState('')
   const [pairOtp, setPairOtp] = useState('')
   const [pairedSuccess, setPairedSuccess] = useState<string | null>(null)
+  const [copiedCmd, setCopiedCmd] = useState(false)
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const curlCmd = `curl -sSL ${origin}/install.sh | bash`
 
   const [showMemberModal, setShowMemberModal] = useState(false)
   const [memberEmail, setMemberEmail] = useState('')
@@ -432,9 +436,33 @@ export default function GroupPage() {
             ) : (
               <form onSubmit={handlePairInstance}>
                 {modalError && <div className="error" style={{ marginBottom: '1rem' }}>{modalError}</div>}
-                <p className="muted" style={{ fontSize: '0.85rem', margin: '0 0 1rem' }}>
-                  Run <code>ezmonitor agent pair</code> on your server to obtain its 16-character hardware fingerprint and 6-digit OTP handshake code.
-                </p>
+                
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ fontSize: '0.82rem', color: 'var(--muted)', fontWeight: 600 }}>
+                    Step 1: Run on your remote Linux server
+                  </label>
+                  <div className="code-box" style={{ margin: '0.4rem 0' }}>
+                    <code>{curlCmd}</code>
+                    <button
+                      type="button"
+                      className="secondary sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(curlCmd)
+                        setCopiedCmd(true)
+                        setTimeout(() => setCopiedCmd(false), 2000)
+                      }}
+                    >
+                      {copiedCmd ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <span className="muted" style={{ fontSize: '0.78rem' }}>
+                    This automatically downloads the agent binary for your architecture and initiates the pairing handshake.
+                  </span>
+                </div>
+
+                <label style={{ fontSize: '0.82rem', color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>
+                  Step 2: Enter the credentials displayed on the server terminal
+                </label>
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
                   <div>
                     <label style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Instance Friendly Name</label>

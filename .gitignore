@@ -2,3 +2,5 @@ backend/agent_config.json
 .env
 backups/
 AUDIT_REPORT.md
+downloads/
+downloads/
