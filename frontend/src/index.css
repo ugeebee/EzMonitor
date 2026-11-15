@@ -133,3 +133,7 @@ button.range.active { background: var(--accent); border-color: var(--accent); co
 .chart-card { padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 .chart-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
 .recharts-text { fill: var(--muted); font-size: 12px; }
+
+.header-link { margin-left: auto; font-size: 0.9rem; }
+.badge-silent { color: #b45309; border-color: #b45309; }
+.range-row h3 { margin: 0; }

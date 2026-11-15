@@ -37,3 +37,33 @@ export function formatKbps(v: number): string {
 export function formatPercent(v: number): string {
   return `${v.toFixed(1)}%`
 }
+
+export function formatDuration(seconds: number): string {
+  const s = Math.round(seconds)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${s % 60}s`
+  const h = Math.floor(m / 60)
+  if (h < 48) return `${h}h ${m % 60}m`
+  return `${Math.floor(h / 24)}d ${h % 24}h`
+}
+
+const METRIC_NAMES: Record<string, string> = {
+  cpu_util: 'CPU',
+  gpu_util: 'GPU',
+  ram_util: 'RAM',
+  uptime: 'Uptime',
+  net_up_kbps: 'Network up',
+  net_down_kbps: 'Network down',
+}
+
+export function metricName(key: string): string {
+  return METRIC_NAMES[key] ?? key
+}
+
+export function metricValue(key: string, v: number): string {
+  if (key.endsWith('_util')) return formatPercent(v)
+  if (key.endsWith('_kbps')) return formatKbps(v)
+  if (key === 'uptime') return formatUptime(v)
+  return String(v)
+}

@@ -101,3 +101,111 @@ export interface Member {
   // The backend currently returns a zero date here, so don't display it.
   date_joined?: string
 }
+
+// ---- Read API (backend/internal/query, GET /api/v1/instances/{id}/series) ----
+// Every bucket is present. An empty bucket has samples = 0 and null metrics: draw a gap, not a zero.
+export interface SeriesPoint {
+  t: string
+  samples: number
+  cpu_avg: number | null
+  cpu_max: number | null
+  ram_avg: number | null
+  ram_max: number | null
+  gpu_avg: number | null
+  gpu_max: number | null
+  net_up_avg: number | null
+  net_up_max: number | null
+  net_down_avg: number | null
+  net_down_max: number | null
+  uptime: number | null
+  cpu_avg_smooth: number | null
+  fleet_cpu_avg: number | null
+  cpu_rank: number | null
+}
+
+export interface InstanceSeries {
+  i_id: number
+  label: string
+  points: SeriesPoint[]
+}
+
+export interface SeriesResponse {
+  from: string
+  to: string
+  step_s: number
+  rollup: boolean
+  series: InstanceSeries[]
+}
+
+export type SeriesRange = '1h' | '6h' | '24h' | '7d'
+
+// ---- Read API: fleet, alerts (backend/internal/query/store.go) ----
+export interface FleetLatest {
+  recorded_at: string
+  cpu_util: number
+  gpu_util: number | null
+  ram_util: number
+  uptime: number
+  net_up_kbps: number
+  net_down_kbps: number
+}
+
+export interface FleetRow {
+  i_id: number
+  g_id: number
+  group_label: string
+  label: string
+  role_id: number
+  enabled: boolean
+  status: string
+  last_seen_at: string | null
+  labels: Record<string, string> | null
+  latest: FleetLatest | null // null: no sample within the lookback
+  active_alerts: number
+}
+
+export interface FleetResponse {
+  instances: FleetRow[] | null
+}
+
+export interface RuleSummary {
+  rule_id: number
+  metric_name: string
+  operator: string
+  threshold_value: number
+  enabled: boolean
+  fired: number
+  instances_affected: number
+  mttr_s: number | null
+  worst_value: number | null
+  last_fired: string | null
+  active_now: number
+}
+
+export interface AlertSummaryResponse {
+  from: string
+  to: string
+  rules: RuleSummary[] | null
+}
+
+export interface AlertRow {
+  a_id: number
+  rule_id: number
+  metric_name: string
+  operator: string
+  threshold_value: number
+  i_id: number
+  instance_label: string
+  alert_value: number
+  triggered_at: string
+  resolved_at: string | null
+  status: string // 'Active' | 'Resolved' (compare case-insensitively)
+}
+
+export interface AlertsResponse {
+  alerts: AlertRow[] | null
+  next_cursor: string | null
+}
+
+export type AlertStatusFilter = 'active' | 'resolved'
+export type AlertRange = '24h' | '7d' | '30d'
