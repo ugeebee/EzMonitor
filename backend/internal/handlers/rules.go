@@ -58,6 +58,13 @@ func (h *RuleHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-link new rule to all active webhooks in this group
+	_, _ = h.db.Exec(ctx, `
+		INSERT INTO alert_rule_webhooks (rule_id, web_id, g_id)
+		SELECT $1, web_id, $2 FROM webhooks WHERE g_id = $2 AND status = 'active'
+		ON CONFLICT DO NOTHING
+	`, rule.RuleID, groupID)
+
 	respondJSON(w, http.StatusCreated, rule)
 }
 

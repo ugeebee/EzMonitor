@@ -60,6 +60,13 @@ func (h *WebhookHandler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-link new webhook to all alert rules in this group
+	_, _ = h.db.Exec(ctx, `
+		INSERT INTO alert_rule_webhooks (rule_id, web_id, g_id)
+		SELECT rule_id, $1, $2 FROM alert_rules WHERE g_id = $2
+		ON CONFLICT DO NOTHING
+	`, web.WebID, groupID)
+
 	respondJSON(w, http.StatusCreated, web)
 }
 
