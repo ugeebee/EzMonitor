@@ -19,15 +19,18 @@ BEGIN;
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM users) THEN
-        RAISE EXCEPTION 'dev_seed: database already has users; reset with "docker compose down -v" first';
+        RAISE NOTICE 'dev_seed: database already has users, ensuring required seed rows exist';
     END IF;
 END $$;
 
 INSERT INTO users (name, email, hash_pass)
 SELECT initcap(u), u || '@ezmonitor.dev', crypt(u || '123', gen_salt('bf', 10))
-FROM unnest(ARRAY['admin', 'editor', 'viewer', 'outsider']) AS u;
+FROM unnest(ARRAY['admin', 'editor', 'viewer', 'outsider']) AS u
+ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO groups (label) VALUES ('Team 4 Lab'), ('Other Tenant');
+INSERT INTO groups (label)
+SELECT grp FROM unnest(ARRAY['Team 4 Lab', 'Other Tenant']) AS grp
+WHERE NOT EXISTS (SELECT 1 FROM groups WHERE label = grp AND parent_id IS NULL);
 
 INSERT INTO user_group_roles (u_id, g_id, role_id)
 SELECT u.u_id, g.g_id, m.role_id
@@ -39,7 +42,8 @@ FROM (VALUES
         ('outsider@ezmonitor.dev', 'Other Tenant', 1)
      ) AS m(email, grp, role_id)
 JOIN users  u ON u.email = m.email
-JOIN groups g ON g.label = m.grp;
+JOIN groups g ON g.label = m.grp
+ON CONFLICT (u_id, g_id) DO NOTHING;
 
 -- 10 instances in Team 4 Lab + 1 in Other Tenant; inserted in order so i_id = n on a fresh DB.
 INSERT INTO instances (g_id, label, fingerprint, token_hash, enabled)
@@ -50,7 +54,7 @@ SELECT g.g_id,
        n <> 10
 FROM generate_series(1, 11) AS n
 JOIN groups g ON g.label = CASE WHEN n = 11 THEN 'Other Tenant' ELSE 'Team 4 Lab' END
-ORDER BY n;
+ON CONFLICT (fingerprint) DO UPDATE SET enabled = EXCLUDED.enabled;
 
 INSERT INTO instance_labels (i_id, label_key, label_value)
 SELECT i.i_id, l.k, l.v
@@ -59,7 +63,8 @@ CROSS JOIN LATERAL (VALUES
     ('env',  CASE WHEN i.i_id <= 5 THEN 'prod' ELSE 'dev' END),
     ('rack', 'r' || ((i.i_id - 1) / 4 + 1)),
     ('gpu',  CASE WHEN i.i_id % 2 = 0 THEN 'nvidia' ELSE 'none' END)
-) AS l(k, v);
+) AS l(k, v)
+ON CONFLICT (i_id, label_key) DO NOTHING;
 
 INSERT INTO alert_rules (g_id, metric_name, operator, threshold_value)
 SELECT g.g_id, r.metric::metric_kind, r.op::cmp_op, r.thr
@@ -67,20 +72,24 @@ FROM groups g
 CROSS JOIN (VALUES ('cpu_util', '>', 90.0),
                    ('ram_util', '>', 85.0),
                    ('gpu_util', '>=', 95.0)) AS r(metric, op, thr)
-WHERE g.label = 'Team 4 Lab';
+WHERE g.label = 'Team 4 Lab'
+ON CONFLICT (rule_id, g_id) DO NOTHING;
 
 INSERT INTO alert_rules (g_id, metric_name, operator, threshold_value)
-SELECT g_id, 'cpu_util', '>', 80 FROM groups WHERE label = 'Other Tenant';
+SELECT g_id, 'cpu_util', '>', 80 FROM groups WHERE label = 'Other Tenant'
+ON CONFLICT (rule_id, g_id) DO NOTHING;
 
 -- Replace the URL with your own https://webhook.site/<uuid> to watch deliveries.
 INSERT INTO webhooks (g_id, webhook_url, secret)
 SELECT g_id, 'https://webhook.site/replace-with-your-uuid', 'dev-webhook-secret'
-FROM groups WHERE label = 'Team 4 Lab';
+FROM groups WHERE label = 'Team 4 Lab'
+ON CONFLICT DO NOTHING;
 
 INSERT INTO alert_rule_webhooks (rule_id, web_id, g_id)
 SELECT r.rule_id, w.web_id, r.g_id
 FROM alert_rules r
-JOIN webhooks w ON w.g_id = r.g_id;
+JOIN webhooks w ON w.g_id = r.g_id
+ON CONFLICT DO NOTHING;
 
 COMMIT;
 

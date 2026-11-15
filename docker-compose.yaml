@@ -84,7 +84,7 @@ services:
       <<: *db-env
     volumes:
       - ./db/seed:/seed:ro
-    entrypoint: ["psql", "-X", "-v", "ON_ERROR_STOP=1", "-f", "/seed/dev_seed.sql", "-f", "/seed/backfill_metrics.sql"]
+    entrypoint: ["psql", "-X", "-v", "ON_ERROR_STOP=1", "-f", "/seed/populate_fake_data.sql"]
     restart: "no"
 
   # ---- application tier (needs backend/Dockerfile and frontend/) ----

@@ -46,6 +46,20 @@ ON CONFLICT (i_id, recorded_at) DO NOTHING;
 
 ANALYZE metrics_data;
 
+-- Update instances last_seen_at and status so dashboard views show live reporting status
+UPDATE instances
+SET last_seen_at = now() - interval '15 seconds',
+    status = 'up'
+WHERE enabled;
+
+UPDATE instances
+SET last_seen_at = now() - interval '3 days',
+    status = 'down'
+WHERE NOT enabled;
+
+-- Precompute 5-minute rollups for instant 24h and 7d charts
+SELECT refresh_metrics_rollup('0 seconds');
+
 SELECT (SELECT count(*) FROM metrics_data) AS total_rows,
        pg_size_pretty(sum(pg_total_relation_size(inhrelid))) AS on_disk
 FROM pg_inherits
