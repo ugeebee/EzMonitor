@@ -1,4 +1,7 @@
-const BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8080').replace(/\/$/, '')
+const BASE_URL = (
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8080')
+).replace(/\/$/, '')
 const TOKEN_KEY = 'ezm_token'
 
 export class ApiError extends Error {
