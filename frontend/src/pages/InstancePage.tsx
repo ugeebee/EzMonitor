@@ -1,7 +1,16 @@
-import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { getInstanceSeries, listInstances } from '../api/endpoints'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import {
+  addLabel,
+  deleteInstance,
+  deleteLabel,
+  getInstanceSeries,
+  listInstances,
+  listLabels,
+  toggleInstance,
+} from '../api/endpoints'
+import { useAuth } from '../auth/useAuth'
 import { MetricChart, type ChartRow } from '../components/MetricChart'
 import { StatusBadge } from '../components/StatusBadge'
 import { MOCK_QUERY_API } from '../config'
@@ -31,13 +40,24 @@ export default function InstancePage() {
   const { sid, iid } = useParams()
   const subgroupId = Number(sid)
   const instanceId = Number(iid)
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { groups } = useAuth()
 
   const [range, setRange] = useState<SeriesRange>('24h')
   const [now, setNow] = useState(() => Date.now())
+  const [toggling, setToggling] = useState(false)
+  const [labelKey, setLabelKey] = useState('')
+  const [labelVal, setLabelVal] = useState('')
+  const [labelSubmitting, setLabelSubmitting] = useState(false)
+
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), REFRESH_MS)
     return () => clearInterval(t)
   }, [])
+
+  const groupInfo = groups.find((g) => g.g_id === subgroupId)
+  const canManage = groupInfo?.role_name === 'admin' || groupInfo?.role_name === 'subadmin' || !groupInfo
 
   const instances = useQuery({
     queryKey: ['instances', subgroupId],
@@ -47,6 +67,11 @@ export default function InstancePage() {
     queryKey: ['series', instanceId, range],
     queryFn: () => getInstanceSeries(instanceId, range),
     refetchInterval: REFRESH_MS,
+  })
+  const labelsQuery = useQuery({
+    queryKey: ['labels', subgroupId, instanceId],
+    queryFn: () => listLabels(subgroupId, instanceId),
+    enabled: !MOCK_QUERY_API,
   })
 
   const instance = instances.data?.find((i) => i.i_id === instanceId)
@@ -78,9 +103,59 @@ export default function InstancePage() {
   const isStale = latest ? now - (new Date(latest.t).getTime() + stepS * 1000) > MIN_STALE_MS : false
   const xFormat = range === '7d' ? formatDay : formatClock
 
+  const handleToggle = async () => {
+    if (!instance) return
+    setToggling(true)
+    try {
+      await toggleInstance(subgroupId, instanceId, !instance.enabled)
+      await queryClient.invalidateQueries({ queryKey: ['instances', subgroupId] })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to toggle instance')
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Are you sure you want to delete instance "${instance?.label ?? instanceId}"?`)) return
+    try {
+      await deleteInstance(subgroupId, instanceId)
+      navigate(`/groups/${subgroupId}`)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete instance')
+    }
+  }
+
+  const handleAddLabel = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!labelKey.trim() || !labelVal.trim()) return
+    setLabelSubmitting(true)
+    try {
+      await addLabel(subgroupId, instanceId, labelKey.trim(), labelVal.trim())
+      setLabelKey('')
+      setLabelVal('')
+      await queryClient.invalidateQueries({ queryKey: ['labels', subgroupId, instanceId] })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to add label')
+    } finally {
+      setLabelSubmitting(false)
+    }
+  }
+
+  const handleDeleteLabel = async (key: string) => {
+    try {
+      await deleteLabel(subgroupId, instanceId, key)
+      await queryClient.invalidateQueries({ queryKey: ['labels', subgroupId, instanceId] })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete label')
+    }
+  }
+
   if (Number.isNaN(subgroupId) || Number.isNaN(instanceId)) {
     return <p className="error">Invalid instance.</p>
   }
+
+  const currentLabels = labelsQuery.data ?? {}
 
   return (
     <>
@@ -88,16 +163,89 @@ export default function InstancePage() {
         <Link to={`/groups/${subgroupId}`}>← Instances</Link>
       </p>
 
-      <div className="title-row">
-        <h2>{instance?.label ?? `Instance ${instanceId}`}</h2>
-        {instance && <StatusBadge status={instance.status} enabled={instance.enabled} />}
+      <div className="title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <h2>{instance?.label ?? `Instance ${instanceId}`}</h2>
+          {instance && <StatusBadge status={instance.status} enabled={instance.enabled} />}
+        </div>
+        {canManage && (
+          <div style={{ display: 'flex', gap: '0.6rem' }}>
+            {instance && (
+              <button
+                className="secondary sm"
+                disabled={toggling}
+                onClick={handleToggle}
+              >
+                {toggling ? 'Updating…' : instance.enabled ? 'Disable Ingestion' : 'Enable Ingestion'}
+              </button>
+            )}
+            <button className="danger sm" onClick={handleDelete}>
+              Delete Instance
+            </button>
+          </div>
+        )}
       </div>
+
       {instance && (
-        <p className="muted">
+        <p className="muted" style={{ margin: '0.25rem 0 1rem' }}>
           {[instance.cpu_model, instance.ram_config, instance.gpu_model].filter(Boolean).join(' · ') ||
             'No hardware details reported yet'}
         </p>
       )}
+
+      {/* Metadata Labels Section */}
+      <div style={{ margin: '1rem 0', padding: '0.75rem 1rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: Object.keys(currentLabels).length > 0 ? '0.5rem' : '0' }}>
+          <strong style={{ fontSize: '0.85rem', color: 'var(--muted)', textTransform: 'uppercase' }}>Instance Labels</strong>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+          {Object.entries(currentLabels).map(([k, v]) => (
+            <span key={k} className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.6rem', fontSize: '0.82rem' }}>
+              <code>{k}={v}</code>
+              {canManage && (
+                <button
+                  type="button"
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)', fontSize: '0.9rem', lineHeight: 1 }}
+                  onClick={() => handleDeleteLabel(k)}
+                  title="Remove label"
+                >
+                  ✕
+                </button>
+              )}
+            </span>
+          ))}
+          {Object.keys(currentLabels).length === 0 && (
+            <span className="muted" style={{ fontSize: '0.85rem' }}>No labels assigned yet.</span>
+          )}
+        </div>
+        {canManage && (
+          <form onSubmit={handleAddLabel} style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder="Key (e.g. env)"
+              value={labelKey}
+              onChange={(e) => setLabelKey(e.target.value)}
+              style={{ maxWidth: '140px', padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+              disabled={labelSubmitting}
+            />
+            <input
+              type="text"
+              placeholder="Value (e.g. prod)"
+              value={labelVal}
+              onChange={(e) => setLabelVal(e.target.value)}
+              style={{ maxWidth: '140px', padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+              disabled={labelSubmitting}
+            />
+            <button
+              type="submit"
+              className="secondary sm"
+              disabled={labelSubmitting || !labelKey.trim() || !labelVal.trim()}
+            >
+              + Add
+            </button>
+          </form>
+        )}
+      </div>
 
       {MOCK_QUERY_API && (
         <p className="notice">

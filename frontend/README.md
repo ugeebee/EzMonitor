@@ -1,75 +1,37 @@
-# React + TypeScript + Vite
+# EzMonitor Frontend Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern, responsive web dashboard for EzMonitor built with **React 18**, **TypeScript**, **Vite**, and **TanStack Query**.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+* **Fleet Overview:** Real-time multi-tenant view of all monitored instances, health status, and live CPU/RAM/GPU telemetry.
+* **Interactive Metric Charts:** Time-series telemetry visualization powered by Recharts (1h, 6h, 24h, 7d ranges with rollup aggregation).
+* **Hardware Pairing Modal:** Seamless onboarding of remote agent servers via 16-hex fingerprint and 6-digit OTP verification.
+* **Alerts & Threshold Rules:** Group-level rule configuration, HMAC webhook management, and manual alert resolution.
+* **Organization & RBAC Management:** Group and Subgroup hierarchy with role-based access control (Admin, Subadmin, Viewer).
+* **Instance Control:** Runtime toggle to enable/disable ingestion per instance and custom label tagging.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## Development Setup
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+```bash
+# Install dependencies
+npm install
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+# Start Vite development server
+npm run dev
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+# Build production bundle
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Configuration
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+Environment configuration is read from `.env` or Vite environment variables:
+* `VITE_API_URL`: Root backend URL (defaults to `window.location.origin`).
+* `VITE_MOCK_QUERY_API`: Set to `false` in production to use the live PostgreSQL analytical query read engine.

@@ -52,14 +52,21 @@ func (h *SubgroupHandler) CreateSubgroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Insert subgroup
+	// Insert subgroup and assign creator role in a transaction
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to begin transaction"})
+		return
+	}
+	defer tx.Rollback(ctx)
+
 	var subgroup models.Group
 	query := `
 		INSERT INTO groups (label, parent_id)
 		VALUES ($1, $2)
 		RETURNING g_id, label, parent_id, date_created
 	`
-	err = h.db.QueryRow(ctx, query, req.Label, parentID).Scan(
+	err = tx.QueryRow(ctx, query, req.Label, parentID).Scan(
 		&subgroup.GID,
 		&subgroup.Label,
 		&subgroup.ParentID,
@@ -67,6 +74,24 @@ func (h *SubgroupHandler) CreateSubgroup(w http.ResponseWriter, r *http.Request)
 	)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create subgroup: " + err.Error()})
+		return
+	}
+
+	// Assign creator an admin role in user_group_roles for the new subgroup
+	if claims, ok := middleware.GetAuthUser(ctx); ok {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO user_group_roles (u_id, g_id, role_id)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (u_id, g_id) DO NOTHING
+		`, claims.UID, subgroup.GID, models.RoleAdmin)
+		if err != nil {
+			respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to assign creator role to subgroup: " + err.Error()})
+			return
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to commit transaction"})
 		return
 	}
 

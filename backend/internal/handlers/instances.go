@@ -261,6 +261,142 @@ func (h *InstanceHandler) DeleteInstance(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Instance deleted successfully"})
 }
 
+// ToggleInstance toggles or sets the enabled status of an instance.
+func (h *InstanceHandler) ToggleInstance(w http.ResponseWriter, r *http.Request) {
+	subgroupIDStr := chi.URLParam(r, "subgroupId")
+	subgroupID, err := strconv.ParseInt(subgroupIDStr, 10, 64)
+	if err != nil || subgroupID <= 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid subgroup ID"})
+		return
+	}
+
+	instanceIDStr := chi.URLParam(r, "instanceId")
+	instanceID, err := strconv.ParseInt(instanceIDStr, 10, 64)
+	if err != nil || instanceID <= 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid instance ID"})
+		return
+	}
+
+	type ToggleRequest struct {
+		Enabled *bool `json:"enabled"`
+	}
+	var req ToggleRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	ctx := r.Context()
+	var newEnabled bool
+	var query string
+	if req.Enabled != nil {
+		query = `UPDATE instances SET enabled = $1 WHERE i_id = $2 AND g_id = $3 RETURNING enabled`
+		err = h.db.QueryRow(ctx, query, *req.Enabled, instanceID, subgroupID).Scan(&newEnabled)
+	} else {
+		query = `UPDATE instances SET enabled = NOT enabled WHERE i_id = $1 AND g_id = $2 RETURNING enabled`
+		err = h.db.QueryRow(ctx, query, instanceID, subgroupID).Scan(&newEnabled)
+	}
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			respondJSON(w, http.StatusNotFound, map[string]string{"error": "Instance not found in this subgroup"})
+			return
+		}
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to toggle instance: " + err.Error()})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"i_id":    instanceID,
+		"enabled": newEnabled,
+		"message": "Instance enabled status updated",
+	})
+}
+
+// AddLabel adds or updates a key/value label on an instance.
+func (h *InstanceHandler) AddLabel(w http.ResponseWriter, r *http.Request) {
+	instanceIDStr := chi.URLParam(r, "instanceId")
+	instanceID, err := strconv.ParseInt(instanceIDStr, 10, 64)
+	if err != nil || instanceID <= 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid instance ID"})
+		return
+	}
+
+	type LabelReq struct {
+		Key   string `json:"label_key"`
+		Value string `json:"label_value"`
+	}
+	var req LabelReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Key == "" || req.Value == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "label_key and label_value are required"})
+		return
+	}
+
+	ctx := r.Context()
+	query := `
+		INSERT INTO instance_labels (i_id, label_key, label_value)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (i_id, label_key) DO UPDATE SET label_value = EXCLUDED.label_value
+	`
+	if _, err := h.db.Exec(ctx, query, instanceID, req.Key, req.Value); err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save label: " + err.Error()})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"label_key": req.Key, "label_value": req.Value})
+}
+
+// ListLabels returns all labels for an instance.
+func (h *InstanceHandler) ListLabels(w http.ResponseWriter, r *http.Request) {
+	instanceIDStr := chi.URLParam(r, "instanceId")
+	instanceID, err := strconv.ParseInt(instanceIDStr, 10, 64)
+	if err != nil || instanceID <= 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid instance ID"})
+		return
+	}
+
+	ctx := r.Context()
+	query := `SELECT label_key, label_value FROM instance_labels WHERE i_id = $1 ORDER BY label_key`
+	rows, err := h.db.Query(ctx, query, instanceID)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list labels"})
+		return
+	}
+	defer rows.Close()
+
+	labels := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err == nil {
+			labels[k] = v
+		}
+	}
+
+	respondJSON(w, http.StatusOK, labels)
+}
+
+// DeleteLabel deletes a label from an instance.
+func (h *InstanceHandler) DeleteLabel(w http.ResponseWriter, r *http.Request) {
+	instanceIDStr := chi.URLParam(r, "instanceId")
+	instanceID, err := strconv.ParseInt(instanceIDStr, 10, 64)
+	if err != nil || instanceID <= 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid instance ID"})
+		return
+	}
+	labelKey := chi.URLParam(r, "labelKey")
+
+	ctx := r.Context()
+	query := `DELETE FROM instance_labels WHERE i_id = $1 AND label_key = $2`
+	res, err := h.db.Exec(ctx, query, instanceID, labelKey)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete label"})
+		return
+	}
+	if res.RowsAffected() == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Label not found"})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Label removed"})
+}
+
 // GetInstanceMetrics allows Viewers, Subadmins, and Admins to inspect time-series measurements.
 func (h *InstanceHandler) GetInstanceMetrics(w http.ResponseWriter, r *http.Request) {
 	subgroupIDStr := chi.URLParam(r, "subgroupId")

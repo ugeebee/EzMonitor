@@ -150,14 +150,16 @@ func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 			g.g_id, 
 			g.label, 
 			g.date_created, 
-			ugr.role_id, 
-			r.role_name,
+			COALESCE(ugr.role_id, parent_ugr.role_id) AS role_id, 
+			COALESCE(r.role_name, parent_r.role_name) AS role_name,
 			(SELECT COUNT(*) FROM user_group_roles WHERE g_id = g.g_id) AS members_count,
 			(SELECT COUNT(*) FROM instances WHERE g_id = g.g_id) AS instances_count
 		FROM groups g
-		JOIN user_group_roles ugr ON g.g_id = ugr.g_id
-		JOIN roles r ON ugr.role_id = r.role_id
-		WHERE g.g_id = $1 AND ugr.u_id = $2
+		LEFT JOIN user_group_roles ugr ON g.g_id = ugr.g_id AND ugr.u_id = $2
+		LEFT JOIN roles r ON ugr.role_id = r.role_id
+		LEFT JOIN user_group_roles parent_ugr ON g.parent_id = parent_ugr.g_id AND parent_ugr.u_id = $2 AND parent_ugr.role_id = 1
+		LEFT JOIN roles parent_r ON parent_ugr.role_id = parent_r.role_id
+		WHERE g.g_id = $1 AND (ugr.u_id IS NOT NULL OR parent_ugr.u_id IS NOT NULL)
 	`
 
 	var detail GroupDetailResponse
@@ -217,4 +219,27 @@ func (h *GroupHandler) RenameGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, group)
+}
+
+// DeleteGroup removes a root group and cascades to all subgroups, instances, rules, and webhooks (BR8).
+func (h *GroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	groupIDStr := chi.URLParam(r, "groupId")
+	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
+	if err != nil || groupID <= 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid group ID"})
+		return
+	}
+
+	ctx := r.Context()
+	res, err := h.db.Exec(ctx, `DELETE FROM groups WHERE g_id = $1`, groupID)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to delete group: " + err.Error()})
+		return
+	}
+	if res.RowsAffected() == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Group not found"})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Group deleted successfully"})
 }

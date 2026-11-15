@@ -137,3 +137,67 @@ button.range.active { background: var(--accent); border-color: var(--accent); co
 .header-link { margin-left: auto; font-size: 0.9rem; }
 .badge-silent { color: #b45309; border-color: #b45309; }
 .range-row h3 { margin: 0; }
+
+/* Modal & Forms */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+.modal-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+select {
+  font: inherit;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  margin-top: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+button.danger {
+  background: var(--danger);
+  color: #fff;
+}
+button.danger:hover:not(:disabled) {
+  opacity: 0.9;
+}
+button.sm {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+}
+.actions-cell {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+

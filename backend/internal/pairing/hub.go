@@ -63,8 +63,8 @@ func (h *Hub) Unregister(fingerprint string) {
 	delete(h.sessions, fingerprint)
 }
 
-// VerifyAndComplete verifies the OTP and transmits the paired credentials to the waiting agent.
-func (h *Hub) VerifyAndComplete(fingerprint, otp string, pairedMsg models.ServerPairedMessage) (*AgentSession, error) {
+// VerifySession validates that an active agent session exists and matches the provided OTP without completing it.
+func (h *Hub) VerifySession(fingerprint, otp string) (*AgentSession, error) {
 	h.mu.RLock()
 	session, exists := h.sessions[fingerprint]
 	h.mu.RUnlock()
@@ -82,14 +82,38 @@ func (h *Hub) VerifyAndComplete(fingerprint, otp string, pairedMsg models.Server
 		return nil, ErrInvalidOTP
 	}
 
-	// Deliver credentials to the agent's channel
+	return session, nil
+}
+
+// CompleteSession delivers the generated credentials to the waiting agent WebSocket channel and removes the session.
+func (h *Hub) CompleteSession(fingerprint string, pairedMsg models.ServerPairedMessage) error {
+	h.mu.RLock()
+	session, exists := h.sessions[fingerprint]
+	h.mu.RUnlock()
+
+	if !exists {
+		return ErrSessionNotFound
+	}
+
 	select {
 	case session.PairedChan <- pairedMsg:
 		h.Unregister(fingerprint)
-		return session, nil
+		return nil
 	default:
-		return nil, errors.New("failed to deliver credentials to agent WebSocket")
+		return errors.New("failed to deliver credentials to agent WebSocket")
 	}
+}
+
+// VerifyAndComplete verifies the OTP and transmits the paired credentials to the waiting agent.
+func (h *Hub) VerifyAndComplete(fingerprint, otp string, pairedMsg models.ServerPairedMessage) (*AgentSession, error) {
+	session, err := h.VerifySession(fingerprint, otp)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.CompleteSession(fingerprint, pairedMsg); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 func (h *Hub) cleanupLoop() {

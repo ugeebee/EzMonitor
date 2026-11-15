@@ -7,17 +7,21 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/ugeebee/EzMonitor/backend/internal/auth"
 	"github.com/ugeebee/EzMonitor/backend/internal/config"
 	"github.com/ugeebee/EzMonitor/backend/internal/database"
 	"github.com/ugeebee/EzMonitor/backend/internal/handlers"
 	"github.com/ugeebee/EzMonitor/backend/internal/middleware"
 	"github.com/ugeebee/EzMonitor/backend/internal/pairing"
+	"github.com/ugeebee/EzMonitor/backend/internal/query"
 )
 
 func main() {
@@ -50,6 +54,32 @@ func main() {
 	instanceHandler := handlers.NewInstanceHandler(db.API)
 	ingestHandler := handlers.NewIngestHandler(db.Ingest)
 	pairingHandler := handlers.NewPairingHandler(db.API, pairingHub)
+	ruleHandler := handlers.NewRuleHandler(db.API)
+	webhookHandler := handlers.NewWebhookHandler(db.API)
+
+	// Query read API (dashboards, fleet, series, alerts)
+	apiDB := stdlib.OpenDBFromPool(db.API)
+	queryStore := query.NewStore(apiDB)
+	queryHandler := &query.Handler{
+		Store: queryStore,
+		User: func(r *http.Request) (int64, bool) {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				return 0, false
+			}
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+				return 0, false
+			}
+			claims, err := auth.ValidateToken(parts[1], cfg.JWTSecret)
+			if err != nil {
+				return 0, false
+			}
+			return claims.UID, true
+		},
+	}
+	queryMux := http.NewServeMux()
+	queryHandler.Register(queryMux)
 
 	// Router setup
 	r := chi.NewRouter()
@@ -117,17 +147,37 @@ func main() {
 					r.Get("/", groupHandler.GetGroup)
 					r.Get("/subgroups", subgroupHandler.ListSubgroups)
 					r.Get("/members", memberHandler.ListMembers)
+					r.Get("/rules", ruleHandler.ListRules)
+					r.Get("/webhooks", webhookHandler.ListWebhooks)
+					r.Put("/alerts/{alertId}/resolve", ruleHandler.ResolveAlert)
+					r.Post("/alerts/{alertId}/resolve", ruleHandler.ResolveAlert)
 				})
 
 				// Admin-only group operations
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireGroupAdmin(db.API))
 					r.Put("/", groupHandler.RenameGroup)
+					r.Delete("/", groupHandler.DeleteGroup)
 					r.Post("/subgroups", subgroupHandler.CreateSubgroup)
 					r.Post("/members", memberHandler.AdmitMember)
 					r.Post("/admit", memberHandler.AdmitMember)
+
+					// Alert rules CRUD
+					r.Post("/rules", ruleHandler.CreateRule)
+					r.Put("/rules/{ruleId}", ruleHandler.UpdateRule)
+					r.Delete("/rules/{ruleId}", ruleHandler.DeleteRule)
+
+					// Webhooks CRUD & linking
+					r.Post("/webhooks", webhookHandler.CreateWebhook)
+					r.Delete("/webhooks/{webId}", webhookHandler.DeleteWebhook)
+					r.Post("/rules/{ruleId}/webhooks/{webId}", webhookHandler.LinkRuleWebhook)
+					r.Delete("/rules/{ruleId}/webhooks/{webId}", webhookHandler.UnlinkRuleWebhook)
 				})
 			})
+
+			// Top-level alert resolution
+			r.Put("/alerts/{alertId}/resolve", ruleHandler.ResolveAlert)
+			r.Post("/alerts/{alertId}/resolve", ruleHandler.ResolveAlert)
 
 			// ==========================================
 			// 2. Subgroup Management (RBAC: Admin, Subadmin, Viewer)
@@ -141,6 +191,7 @@ func main() {
 					r.Get("/", subgroupHandler.GetSubgroup)
 					r.Get("/members", memberHandler.ListMembers)
 					r.Get("/instances", instanceHandler.ListInstances)
+					r.Get("/instances/{instanceId}/labels", instanceHandler.ListLabels)
 
 					// Viewers inspect time-series metrics
 					r.Get("/instances/{instanceId}/metrics", instanceHandler.GetInstanceMetrics)
@@ -159,6 +210,10 @@ func main() {
 					r.Post("/instances/pair", pairingHandler.AdminPairInstance)
 					r.Put("/instances/{instanceId}", instanceHandler.RenameInstance)
 					r.Delete("/instances/{instanceId}", instanceHandler.DeleteInstance)
+					r.Patch("/instances/{instanceId}", instanceHandler.ToggleInstance)
+					r.Patch("/instances/{instanceId}/toggle", instanceHandler.ToggleInstance)
+					r.Post("/instances/{instanceId}/labels", instanceHandler.AddLabel)
+					r.Delete("/instances/{instanceId}/labels/{labelKey}", instanceHandler.DeleteLabel)
 
 					// Manage members
 					r.Post("/members", memberHandler.AdmitMember)
@@ -175,6 +230,9 @@ func main() {
 			})
 		})
 	})
+
+	// Mount query read API routes (/api/v1/fleet, /api/v1/instances/{id}/series, /api/v1/groups/{id}/alerts, etc.)
+	r.NotFound(queryMux.ServeHTTP)
 
 	// Server startup and graceful shutdown
 	server := &http.Server{

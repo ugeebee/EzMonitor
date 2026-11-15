@@ -209,3 +209,80 @@ export interface AlertsResponse {
 
 export type AlertStatusFilter = 'active' | 'resolved'
 export type AlertRange = '24h' | '7d' | '30d'
+
+// ---- Administration & Management Types ----
+export interface CreateGroupRequest {
+  label: string
+}
+
+export interface GroupCreated {
+  g_id: number
+  label: string
+  parent_id?: number
+  date_created: string
+}
+
+export interface CreateSubgroupRequest {
+  label: string
+}
+
+export interface AdmitMemberRequest {
+  email: string
+  role_id: number // 1 admin, 2 subadmin, 3 viewer
+}
+
+export interface PairInstanceRequest {
+  label: string
+  fingerprint: string
+  otp: string
+}
+
+export interface PairInstanceResponse {
+  i_id: number
+  g_id: number
+  label: string
+  fingerprint: string
+  token: string
+  status: InstanceStatus
+  enabled: boolean
+  date_created: string
+}
+
+export interface AlertRule {
+  rule_id: number
+  g_id: number
+  metric_name: string
+  operator: string
+  threshold_value: number
+  enabled: boolean
+  date_created: string
+}
+
+export interface CreateRuleRequest {
+  metric_name: string
+  operator: string
+  threshold_value: number
+  enabled?: boolean
+}
+
+export interface UpdateRuleRequest {
+  metric_name?: string
+  operator?: string
+  threshold_value?: number
+  enabled?: boolean
+}
+
+export interface Webhook {
+  web_id: number
+  g_id: number
+  webhook_url: string
+  secret: string
+  status: string
+  date_created: string
+}
+
+export interface CreateWebhookRequest {
+  webhook_url: string
+  secret?: string
+}
+

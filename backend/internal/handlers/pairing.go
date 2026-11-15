@@ -176,12 +176,8 @@ func (h *PairingHandler) AdminPairInstance(w http.ResponseWriter, r *http.Reques
 	hashBytes := sha256.Sum256([]byte(rawToken))
 	tokenHash := hex.EncodeToString(hashBytes[:])
 
-	// 3. Check hub for waiting agent session and peek hardware metadata
-	h.hub.VerifyAndComplete("", "", models.ServerPairedMessage{}) // typecheck helper (no-op)
-
-	// First verify session exists and OTP matches before inserting into DB
-	var tempMsg models.ServerPairedMessage
-	session, err := h.hub.VerifyAndComplete(req.Fingerprint, req.OTP, tempMsg)
+	// 3. Check hub for waiting agent session and verify OTP
+	session, err := h.hub.VerifySession(req.Fingerprint, req.OTP)
 	if err != nil {
 		if errors.Is(err, pairing.ErrSessionNotFound) {
 			respondJSON(w, http.StatusNotFound, map[string]string{
@@ -247,8 +243,10 @@ func (h *PairingHandler) AdminPairInstance(w http.ResponseWriter, r *http.Reques
 		GID:        subgroupID,
 	}
 
-	// Write directly to agent connection
-	_ = session.Conn.WriteJSON(pairedMsg)
+	// Complete the session so AgentWebSocket forwards the credentials to the agent CLI
+	if err := h.hub.CompleteSession(req.Fingerprint, pairedMsg); err != nil {
+		_ = session.Conn.WriteJSON(pairedMsg)
+	}
 
 	respondJSON(w, http.StatusCreated, models.PairInstanceResponse{
 		IID:         instanceID,

@@ -7,6 +7,7 @@ export interface AuthState {
   loading: boolean // true while restoring a saved session
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
+  refreshProfile: () => Promise<void>
   logout: () => void
 }
 
